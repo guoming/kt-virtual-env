@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+release/
+resources/bin/**/*
+!resources/bin/.gitkeep
+.DS_Store
+*.log

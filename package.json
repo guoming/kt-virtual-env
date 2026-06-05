@@ -1,0 +1,15 @@
+{
+  "name": "zt-virtual-env",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "dev": "pnpm --filter @zt-virtual-env/desktop dev",
+    "fetch-binaries": "bash scripts/fetch-binaries.sh",
+    "build:helper": "cd native/privileged-helper && ./build.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
