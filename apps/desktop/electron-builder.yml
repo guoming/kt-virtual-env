@@ -1,0 +1,19 @@
+appId: com.zt.virtualenv
+productName: zt-virtual-env
+directories:
+  output: release
+files:
+  - dist/**/*
+  - package.json
+extraResources:
+  - from: ../../resources/bin/darwin-arm64
+    to: bin/darwin-arm64
+  - from: resources/helper
+    to: helper
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+win:
+  target:
+    - nsis
