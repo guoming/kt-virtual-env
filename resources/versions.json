@@ -1,0 +1,8 @@
+{
+  "ktctl": {
+    "version": "0.3.7"
+  },
+  "kubectl": {
+    "version": "1.28.15"
+  }
+}
