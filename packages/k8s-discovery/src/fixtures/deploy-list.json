@@ -1,0 +1,28 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "metadata": {
+        "name": "ark-server",
+        "namespace": "app-ark",
+        "labels": {
+          "virtual-env": "dev.v2.zt07905",
+          "app.kubernetes.io/env": "dev",
+          "app.kubernetes.io/name": "ark-server"
+        }
+      },
+      "spec": {
+        "template": {
+          "spec": {
+            "containers": [
+              {
+                "name": "app",
+                "ports": [{ "containerPort": 80 }]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
