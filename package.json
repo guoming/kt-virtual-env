@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "pnpm --filter @kt-virtual-env/shared --filter @kt-virtual-env/k8s-discovery build && pnpm -r test",
     "clean": "rm -rf dist apps/desktop/out apps/desktop/release packages/shared/dist packages/k8s-discovery/dist && find . -name '.DS_Store' -not -path './node_modules/*' -delete",
     "dev": "pnpm --filter @kt-virtual-env/shared --filter @kt-virtual-env/k8s-discovery build && pnpm --filter @kt-virtual-env/desktop dev",
     "docs:screenshots": "node scripts/capture-docs-screenshots.mjs",

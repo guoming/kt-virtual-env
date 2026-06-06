@@ -52,8 +52,5 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      - name: Build workspace packages
-        run: pnpm build
-
-      - name: Build desktop renderer & main
+      - name: Build desktop app
         run: pnpm --filter @kt-virtual-env/desktop build
