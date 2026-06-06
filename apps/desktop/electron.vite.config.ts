@@ -16,9 +16,14 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
+      lib: {
+        entry: resolve(__dirname, 'src/preload/index.ts'),
+        formats: ['cjs'],
+      },
       rollupOptions: {
-        input: {
-          index: resolve(__dirname, 'src/preload/index.ts'),
+        output: {
+          format: 'cjs',
+          entryFileNames: 'index.js',
         },
       },
     },
@@ -32,6 +37,11 @@ export default defineConfig({
         },
       },
     },
-    plugins: [react()],
+    // Electron 中 HMR/Fast Refresh preamble 竞态会导致白屏
+    plugins: [react({ fastRefresh: false })],
+    server: {
+      port: 5173,
+      hmr: false,
+    },
   },
 });

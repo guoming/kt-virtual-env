@@ -1,4 +1,5 @@
-import type { Session } from '@zt-virtual-env/shared';
+import type { Session } from '@kt-virtual-env/shared';
+import { isActiveSession } from '../lib/session-utils';
 
 interface Props {
   sessions: Session[];
@@ -24,15 +25,17 @@ export function SessionPanel({ sessions, selectedId, onSelect, onStop }: Props) 
             <span>{s.state}</span>
           </div>
           <div className="truncate text-gray-600">{s.target}</div>
-          <button
-            className="mt-1 text-red-600 hover:underline"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStop(s.id);
-            }}
-          >
-            停止
-          </button>
+          {isActiveSession(s) && (
+            <button
+              className="mt-1 text-red-600 hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onStop(s.id);
+              }}
+            >
+              停止
+            </button>
+          )}
         </li>
       ))}
     </ul>

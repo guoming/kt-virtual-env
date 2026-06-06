@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"net"
+	"os"
 )
 
 type MessageHandler func(conn net.Conn, msg map[string]any) error
@@ -14,6 +15,7 @@ func Serve(socketPath string, handler MessageHandler) error {
 	if err != nil {
 		return err
 	}
+	_ = os.Chmod(socketPath, 0o666)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {

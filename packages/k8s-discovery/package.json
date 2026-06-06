@@ -1,5 +1,5 @@
 {
-  "name": "@zt-virtual-env/k8s-discovery",
+  "name": "@kt-virtual-env/k8s-discovery",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@zt-virtual-env/shared": "workspace:*"
+    "@kt-virtual-env/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

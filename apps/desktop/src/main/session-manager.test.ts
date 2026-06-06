@@ -11,6 +11,14 @@ describe('SessionManager', () => {
     expect(sm.get(s.id)?.pid).toBe(1234);
   });
 
+  it('remove drops session from list', () => {
+    const sm = new SessionManager();
+    const s = sm.create({ type: 'mesh', target: 'ark', namespace: 'app-ark', command: 'cmd' });
+    sm.remove(s.id);
+    expect(sm.get(s.id)).toBeUndefined();
+    expect(sm.list()).toHaveLength(0);
+  });
+
   it('caps logs at 2000 lines', () => {
     const sm = new SessionManager();
     const s = sm.create({ type: 'forward', target: 'svc', namespace: 'ns', command: 'cmd' });

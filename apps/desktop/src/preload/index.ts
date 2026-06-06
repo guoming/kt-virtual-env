@@ -1,13 +1,24 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ConnectParams, ForwardParams, MeshProfile, Session } from '@zt-virtual-env/shared';
+import type {
+  ConnectParams,
+  EnvironmentStatus,
+  ForwardParams,
+  HealthCheckResult,
+  LocalDevPort,
+  MeshProfile,
+  Session,
+  SessionType,
+} from '@kt-virtual-env/shared';
 
-export interface ZtveApi {
+export interface KtveApi {
   config: {
     get: () => Promise<ReturnType<typeof ipcRenderer.invoke>>;
     save: (cfg: unknown) => Promise<unknown>;
+    pickKubeconfig: () => Promise<string | null>;
   };
   app: {
     versions: () => Promise<{ app: string; ktctl: string; kubectl: string }>;
+    checkEnvironment: () => Promise<EnvironmentStatus>;
     onConfirmExit: (cb: (count: number) => void) => () => void;
     forceQuit: (action: 'stopAll' | 'cancel') => Promise<void>;
   };
@@ -15,10 +26,15 @@ export interface ZtveApi {
     listProfiles: () => Promise<MeshProfile[]>;
     listNamespaces: () => Promise<string[]>;
     listServices: (ns: string) => Promise<Array<{ name: string; port: number }>>;
+    searchProfiles: (
+      virtualEnvQuery: string,
+      ns?: string,
+      deployQuery?: string,
+    ) => Promise<MeshProfile[]>;
     listContexts: () => Promise<string[]>;
     testConnection: () => Promise<{ ok: boolean; message: string }>;
   };
-  mesh: { start: (profileKey: string, localPort: number) => Promise<string> };
+  mesh: { start: (profile: MeshProfile, localPort: number, userId?: string) => Promise<string> };
   forward: { start: (params: ForwardParams) => Promise<string> };
   connect: {
     start: (params: ConnectParams) => Promise<string>;
@@ -39,15 +55,40 @@ export interface ZtveApi {
     clean: () => Promise<void>;
   };
   shell: { openExternal: (url: string) => Promise<void> };
+  stain: {
+    open: (
+      url: string,
+      virtualEnv: string,
+    ) => Promise<{ id: string; warning?: string }>;
+    pickExtensionDir: () => Promise<string | null>;
+    list: () => Promise<Array<{ id: string; url: string; virtualEnv: string; title: string }>>;
+    close: (id: string) => Promise<void>;
+    closeAll: () => Promise<void>;
+    focus: (id: string) => Promise<void>;
+    toggleDevTools: (id: string) => Promise<void>;
+  };
+  health: {
+    checkConnect: () => Promise<HealthCheckResult>;
+    checkSession: (id: string) => Promise<HealthCheckResult>;
+    checkSessionsByType: (type: SessionType) => Promise<Record<string, HealthCheckResult>>;
+  };
+  system: {
+    pickLocalPort: (reserved: number[], preferred: number) => Promise<number>;
+    listLocalDevPorts: () => Promise<LocalDevPort[]>;
+    pickMeshLocalPort: (profile: MeshProfile, reserved: number[]) => Promise<LocalDevPort>;
+    validateMeshLocalPort: (port: number) => Promise<void>;
+  };
 }
 
-const api: ZtveApi = {
+const api: KtveApi = {
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     save: (cfg) => ipcRenderer.invoke('config:save', cfg),
+    pickKubeconfig: () => ipcRenderer.invoke('config:pickKubeconfig'),
   },
   app: {
     versions: () => ipcRenderer.invoke('app:versions'),
+    checkEnvironment: () => ipcRenderer.invoke('app:checkEnvironment'),
     onConfirmExit: (cb) => {
       const handler = (_: unknown, count: number) => cb(count);
       ipcRenderer.on('app:confirmExit', handler);
@@ -59,10 +100,16 @@ const api: ZtveApi = {
     listProfiles: () => ipcRenderer.invoke('k8s:listProfiles'),
     listNamespaces: () => ipcRenderer.invoke('k8s:listNamespaces'),
     listServices: (ns) => ipcRenderer.invoke('k8s:listServices', ns),
+    searchServices: (query, ns) => ipcRenderer.invoke('k8s:searchServices', query, ns),
+    searchProfiles: (virtualEnvQuery, ns, deployQuery) =>
+      ipcRenderer.invoke('k8s:searchProfiles', virtualEnvQuery, ns, deployQuery),
     listContexts: () => ipcRenderer.invoke('k8s:listContexts'),
     testConnection: () => ipcRenderer.invoke('k8s:testConnection'),
   },
-  mesh: { start: (profileKey, localPort) => ipcRenderer.invoke('mesh:start', profileKey, localPort) },
+  mesh: {
+    start: (profile, localPort, userId) =>
+      ipcRenderer.invoke('mesh:start', profile, localPort, userId),
+  },
   forward: { start: (params) => ipcRenderer.invoke('forward:start', params) },
   connect: {
     start: (params) => ipcRenderer.invoke('connect:start', params),
@@ -87,6 +134,28 @@ const api: ZtveApi = {
     clean: () => ipcRenderer.invoke('ktctl:clean'),
   },
   shell: { openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url) },
+  stain: {
+    open: (url, virtualEnv) => ipcRenderer.invoke('stain:open', url, virtualEnv),
+    pickExtensionDir: () => ipcRenderer.invoke('stain:pickExtensionDir'),
+    list: () => ipcRenderer.invoke('stain:list'),
+    close: (id) => ipcRenderer.invoke('stain:close', id),
+    closeAll: () => ipcRenderer.invoke('stain:closeAll'),
+    focus: (id) => ipcRenderer.invoke('stain:focus', id),
+    toggleDevTools: (id) => ipcRenderer.invoke('stain:toggleDevTools', id),
+  },
+  health: {
+    checkConnect: () => ipcRenderer.invoke('health:checkConnect'),
+    checkSession: (id) => ipcRenderer.invoke('health:checkSession', id),
+    checkSessionsByType: (type) => ipcRenderer.invoke('health:checkSessionsByType', type),
+  },
+  system: {
+    pickLocalPort: (reserved, preferred) =>
+      ipcRenderer.invoke('system:pickLocalPort', reserved, preferred),
+    listLocalDevPorts: () => ipcRenderer.invoke('system:listLocalDevPorts'),
+    pickMeshLocalPort: (profile, reserved) =>
+      ipcRenderer.invoke('system:pickMeshLocalPort', profile, reserved),
+    validateMeshLocalPort: (port) => ipcRenderer.invoke('system:validateMeshLocalPort', port),
+  },
 };
 
-contextBridge.exposeInMainWorld('ztve', api);
+contextBridge.exposeInMainWorld('ktve', api);

@@ -1,4 +1,4 @@
-# zt-virtual-env 桌面工具设计规格
+# kt-virtual-env 桌面工具设计规格
 
 > 日期：2026-06-06  
 > 状态：待评审  
@@ -193,16 +193,16 @@ Session 字段：id、type、target、namespace、ports、virtualEnv、pid、sta
 | L3 运行时 | 子进程 | Shadow Pod 超时、镜像拉取失败 | 日志高亮 + 排查建议 |
 | L4 Helper | IPC | 未授权、Helper 崩溃 | 顶栏红灯 + 重新授权 |
 
-诊断日志：`~/.zt-virtual-env/logs/`；设置页支持导出诊断包（日志 + 脱敏配置）。
+诊断日志：`~/.kt-virtual-env/logs/`；设置页支持导出诊断包（日志 + 脱敏配置）。
 
-配置持久化：`~/.zt-virtual-env/config.json`（kubeconfig 路径、context、最近命名空间、Connect DNS 勾选记忆）。
+配置持久化：`~/.kt-virtual-env/config.json`（kubeconfig 路径、context、最近命名空间、Connect DNS 勾选记忆）。
 
 ---
 
 ## 6. 项目结构
 
 ```
-zt-virtual-env/
+kt-virtual-env/
 ├── apps/desktop/              # Electron 主应用
 │   ├── src/main/              # 主进程
 │   ├── src/preload/

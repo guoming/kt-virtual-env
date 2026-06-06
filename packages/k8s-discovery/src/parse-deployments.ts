@@ -1,4 +1,4 @@
-import type { MeshProfile } from '@zt-virtual-env/shared';
+import type { MeshProfile } from '@kt-virtual-env/shared';
 import { suggestLocalPort } from './suggest-port.js';
 
 interface DeployList {

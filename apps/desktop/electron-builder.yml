@@ -1,19 +1,29 @@
-appId: com.zt.virtualenv
-productName: zt-virtual-env
+appId: com.kt.virtualenv
+productName: kt-virtual-env
+copyright: Copyright © 2026
 directories:
-  output: release
+  output: ../../dist/packages
+  buildResources: build
 files:
-  - dist/**/*
+  - out/**/*
   - package.json
-extraResources:
-  - from: ../../resources/bin/darwin-arm64
-    to: bin/darwin-arm64
-  - from: resources/helper
-    to: helper
+artifactName: kt-virtual-env-${version}-${os}-${arch}.${ext}
 mac:
   target:
     - dmg
   category: public.app-category.developer-tools
+  artifactName: kt-virtual-env-${version}-mac-${arch}.${ext}
+  extendInfo:
+    CFBundleDisplayName: Kubernetes 虚拟环境工作台
+    CFBundleName: kt-virtual-env
+dmg:
+  title: kt-virtual-env ${version}
 win:
   target:
     - nsis
+  artifactName: kt-virtual-env-${version}-win-${arch}.${ext}
+nsis:
+  shortcutName: Kubernetes 虚拟环境工作台
+  uninstallDisplayName: kt-virtual-env
+  oneClick: false
+  allowToChangeInstallationDirectory: true

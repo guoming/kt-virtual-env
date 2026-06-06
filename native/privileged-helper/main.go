@@ -10,22 +10,20 @@ import (
 	"strings"
 	"syscall"
 
-	"git.eminxing.com/fbg/tools/dev-tools/zt-virtual-env/native/privileged-helper/ipc"
+	"git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper/ipc"
 )
 
 const helperVersion = "0.1.0"
 
 func main() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "home dir:", err)
-		os.Exit(1)
+	socketPath := os.Getenv("KTVE_HELPER_SOCKET")
+	if socketPath == "" {
+		// 回退：当前进程 uid（提权后为 0，仅开发直连时使用）
+		socketPath = filepath.Join(os.TempDir(), fmt.Sprintf("kt-virtual-env-helper-%d.sock", os.Getuid()))
 	}
-	socketPath := filepath.Join(home, ".zt-virtual-env", "helper.sock")
-	_ = os.MkdirAll(filepath.Dir(socketPath), 0o700)
 	_ = os.Remove(socketPath)
 
-	fmt.Println("zt-virtual-env-helper", helperVersion, "listening on", socketPath)
+	fmt.Println("kt-virtual-env-helper", helperVersion, "listening on", socketPath)
 
 	go func() {
 		sig := make(chan os.Signal, 1)
@@ -36,7 +34,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	err = ipc.Serve(socketPath, dispatch)
+	err := ipc.Serve(socketPath, dispatch)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -68,11 +66,12 @@ func handleConnect(conn net.Conn, msg map[string]any) error {
 	if ktctlPath == "" {
 		return ipc.WriteEvent(conn, map[string]any{"event": "error", "code": "MISSING_KTCTL", "message": "ktctlPath required"})
 	}
+	ktHome, _ := msg["ktHome"].(string)
 	params, _ := msg["params"].(map[string]any)
 	args := buildConnectArgs(params)
 	_ = ipc.WriteEvent(conn, map[string]any{"event": "status", "state": "starting"})
 
-	if err := ipc.HandleConnect(ktctlPath, args, func(line string) {
+	if err := ipc.HandleConnect(ktctlPath, args, ktHome, func(line string) {
 		_ = ipc.WriteEvent(conn, map[string]any{"event": "log", "line": line})
 	}); err != nil {
 		return ipc.WriteEvent(conn, map[string]any{"event": "status", "state": "failed", "message": err.Error()})

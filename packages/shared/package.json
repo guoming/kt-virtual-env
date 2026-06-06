@@ -1,5 +1,5 @@
 {
-  "name": "@zt-virtual-env/shared",
+  "name": "@kt-virtual-env/shared",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

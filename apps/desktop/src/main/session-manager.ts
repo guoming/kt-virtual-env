@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Session, SessionType } from '@zt-virtual-env/shared';
+import type { Session, SessionType } from '@kt-virtual-env/shared';
 
 const MAX_LOGS = 2000;
 
@@ -64,6 +64,12 @@ export class SessionManager {
 
   markStopped(id: string): void {
     this.patch(id, { state: 'stopped' });
+  }
+
+  remove(id: string): void {
+    if (this.sessions.delete(id)) {
+      this.notify();
+    }
   }
 
   appendLog(id: string, line: string): void {

@@ -1,5 +1,6 @@
-import { buildMeshCommand } from '@zt-virtual-env/shared';
-import type { ForwardParams, MeshProfile } from '@zt-virtual-env/shared';
+import { buildMeshCommand } from '@kt-virtual-env/shared';
+import { isProcessAlive } from './process-utils.js';
+import type { ForwardParams, MeshProfile } from '@kt-virtual-env/shared';
 import { getBundledBinary } from './binary-resolver.js';
 import { ProcessRunner } from './process-runner.js';
 import { SessionManager } from './session-manager.js';
@@ -34,16 +35,16 @@ export class KtctlService {
     });
   }
 
-  startMesh(profile: MeshProfile, localPort: number): string {
+  startMesh(profile: MeshProfile, localPort: number, userId: string): string {
     const cfg = loadConfig();
-    const { args, display } = buildMeshCommand(profile, localPort);
+    const { args, display, meshVersion } = buildMeshCommand(profile, localPort, userId);
     args.push('--kubeconfig', cfg.kubeconfig);
     if (cfg.context) {
       args.push('--context', cfg.context);
     }
     return this.spawnKtctl('mesh', profile.deploymentName, profile.namespace, args, {
       localPort,
-      virtualEnv: profile.virtualEnv,
+      virtualEnv: meshVersion,
       commandOverride: display,
     });
   }
@@ -67,9 +68,25 @@ export class KtctlService {
     });
     const runner = new ProcessRunner();
     runner.on('log', (line: string) => this.sessions.appendLog(session.id, line));
-    runner.on('exit', ({ code }) => {
-      if (code === 0) {
-        this.sessions.markStopped(session.id);
+    runner.on('exit', ({ code, signal }) => {
+      const current = this.sessions.get(session.id);
+      if (!current) {
+        this.runners.delete(session.id);
+        return;
+      }
+      if (current.state === 'stopped') {
+        this.sessions.remove(session.id);
+        this.runners.delete(session.id);
+        return;
+      }
+      const gracefulExit =
+        runner.stoppedByUser ||
+        code === 0 ||
+        signal === 'SIGTERM' ||
+        signal === 'SIGINT' ||
+        signal === 'SIGKILL';
+      if (gracefulExit) {
+        this.sessions.remove(session.id);
       } else {
         this.sessions.markFailed(session.id);
       }
@@ -82,16 +99,26 @@ export class KtctlService {
     return session.id;
   }
 
-  stopSession(id: string): void {
+  async stopSession(id: string): Promise<void> {
+    const session = this.sessions.get(id);
+    if (!session) return;
+
     this.runners.get(id)?.stop();
     this.sessions.markStopped(id);
     this.runners.delete(id);
+
+    if (session.type === 'mesh' || session.type === 'forward') {
+      try {
+        await this.recover(session.target, session.namespace);
+      } catch {
+        // recover 尽力而为，停止后会话将从面板移除
+      }
+    }
+    this.sessions.remove(id);
   }
 
-  stopAll(): void {
-    for (const id of [...this.runners.keys()]) {
-      this.stopSession(id);
-    }
+  async stopAll(): Promise<void> {
+    await Promise.all([...this.runners.keys()].map((id) => this.stopSession(id)));
   }
 
   async recover(target: string, namespace: string): Promise<void> {
@@ -108,5 +135,11 @@ export class KtctlService {
     const args = ['clean', '--kubeconfig', cfg.kubeconfig];
     if (cfg.context) args.push('--context', cfg.context);
     await execFileAsync(ktctl, args);
+  }
+
+  isProcessRunning(id: string): boolean {
+    const runner = this.runners.get(id);
+    const pid = runner?.pid ?? this.sessions.get(id)?.pid;
+    return isProcessAlive(pid);
   }
 }

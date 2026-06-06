@@ -1,3 +1,3 @@
-module git.eminxing.com/fbg/tools/dev-tools/zt-virtual-env/native/privileged-helper
+module git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper
 
 go 1.22

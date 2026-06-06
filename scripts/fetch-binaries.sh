@@ -5,6 +5,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="$ROOT/resources/bin"
 KTCTL_VERSION="0.3.7"
 KUBECTL_VERSION="1.28.15"
+CURL_OPTS=(--connect-timeout 15 --max-time 300)
+
+copy_from_path() {
+  local name="$1"
+  local dest="$2"
+  local found
+  found="$(command -v "$name" 2>/dev/null || true)"
+  if [[ -n "$found" && -x "$found" ]]; then
+    install -m 755 "$found" "$dest"
+    echo "⚠ ${name} 下载失败，已从本机复制: $found" >&2
+    return 0
+  fi
+  return 1
+}
 
 download_ktctl() {
   local platform_key="$1"
@@ -14,10 +28,11 @@ download_ktctl() {
 
   case "$platform_key" in
     darwin-arm64)
-      url="https://github.com/alibaba/kt-connect/releases/download/v${KTCTL_VERSION}/ktctl_${KTCTL_VERSION}_Darwin_arm64.tar.gz"
+      # 官方 release 资产名为 MacOS_arm_64，非 Darwin_arm64
+      url="https://github.com/alibaba/kt-connect/releases/download/v${KTCTL_VERSION}/ktctl_${KTCTL_VERSION}_MacOS_arm_64.tar.gz"
       ;;
     darwin-amd64)
-      url="https://github.com/alibaba/kt-connect/releases/download/v${KTCTL_VERSION}/ktctl_${KTCTL_VERSION}_Darwin_x86_64.tar.gz"
+      url="https://github.com/alibaba/kt-connect/releases/download/v${KTCTL_VERSION}/ktctl_${KTCTL_VERSION}_MacOS_x86_64.tar.gz"
       ;;
     windows-amd64)
       url="https://github.com/alibaba/kt-connect/releases/download/v${KTCTL_VERSION}/ktctl_${KTCTL_VERSION}_Windows_x86_64.zip"
@@ -30,15 +45,29 @@ download_ktctl() {
 
   local tmp
   tmp="$(mktemp -d)"
+  local ok=0
   if [[ "$platform_key" == windows-amd64 ]]; then
-    curl -fsSL "$url" -o "$tmp/ktctl.zip"
-    unzip -q "$tmp/ktctl.zip" -d "$tmp"
-    install -m 755 "$tmp/ktctl.exe" "$dest/ktctl.exe"
+    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$tmp/ktctl.zip"; then
+      unzip -q "$tmp/ktctl.zip" -d "$tmp"
+      install -m 755 "$tmp/ktctl.exe" "$dest/ktctl.exe"
+      ok=1
+    elif copy_from_path ktctl.exe "$dest/ktctl.exe"; then
+      ok=1
+    fi
   else
-    curl -fsSL "$url" | tar xz -C "$tmp"
-    install -m 755 "$tmp/ktctl" "$dest/ktctl"
+    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$tmp/ktctl.tar.gz"; then
+      tar xzf "$tmp/ktctl.tar.gz" -C "$tmp"
+      install -m 755 "$tmp/ktctl" "$dest/ktctl"
+      ok=1
+    elif copy_from_path ktctl "$dest/ktctl"; then
+      ok=1
+    fi
   fi
   rm -rf "$tmp"
+  if [[ "$ok" -eq 0 ]]; then
+    echo "failed to download ktctl: $url (且无本机 ktctl 可回退)" >&2
+    return 1
+  fi
   echo "✓ ktctl $platform_key"
 }
 
@@ -61,11 +90,24 @@ download_kubectl() {
   esac
 
   local url="https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/${os}/${arch}/kubectl"
+  local ok=0
   if [[ "$platform_key" == windows-amd64 ]]; then
-    curl -fsSL "$url" -o "$dest/kubectl.exe"
+    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$dest/kubectl.exe"; then
+      ok=1
+    elif copy_from_path kubectl.exe "$dest/kubectl.exe"; then
+      ok=1
+    fi
   else
-    curl -fsSL "$url" -o "$dest/kubectl"
-    chmod +x "$dest/kubectl"
+    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$dest/kubectl"; then
+      chmod +x "$dest/kubectl"
+      ok=1
+    elif copy_from_path kubectl "$dest/kubectl"; then
+      ok=1
+    fi
+  fi
+  if [[ "$ok" -eq 0 ]]; then
+    echo "failed to download kubectl: $url (且无本机 kubectl 可回退)" >&2
+    return 1
   fi
   echo "✓ kubectl $platform_key"
 }
@@ -91,6 +133,9 @@ main() {
           targets=(darwin-amd64)
         fi
         echo "note: linux dev host; downloading darwin binaries for packaging" >&2
+        ;;
+      msys*|mingw*|cygwin*)
+        targets=(windows-amd64)
         ;;
       *)
         echo "unsupported host OS: $host_os" >&2

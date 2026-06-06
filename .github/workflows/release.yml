@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download ktctl / kubectl
+        run: pnpm fetch-binaries darwin-arm64 darwin-amd64
+
+      - name: Build privileged helper
+        run: pnpm build:helper
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Pack macOS arm64
+        run: pnpm --filter @kt-virtual-env/desktop pack:mac:arm64
+
+      - name: Pack macOS x64
+        run: pnpm --filter @kt-virtual-env/desktop pack:mac:x64
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installers
+          path: |
+            dist/packages/*.dmg
+            !dist/packages/*-unpacked/**
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download ktctl / kubectl
+        run: pnpm fetch-binaries windows-amd64
+
+      - name: Build privileged helper
+        run: pnpm build:helper
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Pack Windows
+        run: pnpm --filter @kt-virtual-env/desktop pack:win
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            dist/packages/*.exe
+            !dist/packages/*-unpacked/**
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-installers
+          path: dist/release/macos
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installers
+          path: dist/release/windows
+
+      - name: Generate checksums
+        run: |
+          mkdir -p dist/release/assets
+          find dist/release/macos dist/release/windows -type f \( -name '*.dmg' -o -name '*.exe' \) -exec cp {} dist/release/assets/ \;
+          cd dist/release/assets
+          shasum -a 256 * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/release/assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -1,15 +1,22 @@
 {
-  "name": "zt-virtual-env",
+  "name": "kt-virtual-env",
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "dev": "pnpm --filter @zt-virtual-env/desktop dev",
+    "clean": "rm -rf dist apps/desktop/out apps/desktop/release packages/shared/dist packages/k8s-discovery/dist && find . -name '.DS_Store' -not -path './node_modules/*' -delete",
+    "dev": "pnpm --filter @kt-virtual-env/shared --filter @kt-virtual-env/k8s-discovery build && pnpm --filter @kt-virtual-env/desktop dev",
+    "docs:screenshots": "node scripts/capture-docs-screenshots.mjs",
     "fetch-binaries": "bash scripts/fetch-binaries.sh",
-    "build:helper": "cd native/privileged-helper && ./build.sh"
+    "build:helper": "cd native/privileged-helper && ./build.sh",
+    "pack:mac": "pnpm --filter @kt-virtual-env/desktop pack:mac",
+    "pack:win": "pnpm --filter @kt-virtual-env/desktop pack:win"
   },
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
 }

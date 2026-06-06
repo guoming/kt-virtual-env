@@ -1,9 +1,8 @@
 import net from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
-import type { ConnectParams, HelperInbound, HelperOutbound } from '@zt-virtual-env/shared';
+import type { ConnectParams, HelperInbound, HelperOutbound } from '@kt-virtual-env/shared';
+import { getHelperSocketPath } from './helper-socket.js';
 
-const SOCKET = path.join(os.homedir(), '.zt-virtual-env', 'helper.sock');
+const SOCKET = getHelperSocketPath();
 
 export class HelperClient {
   private conn?: net.Socket;
@@ -50,6 +49,10 @@ export class HelperClient {
   }
 }
 
-export function buildConnectMessage(ktctlPath: string, params: ConnectParams): HelperInbound {
-  return { cmd: 'connect', params, ktctlPath };
+export function buildConnectMessage(
+  ktctlPath: string,
+  params: ConnectParams,
+  ktHome: string,
+): HelperInbound {
+  return { cmd: 'connect', params, ktctlPath, ktHome };
 }

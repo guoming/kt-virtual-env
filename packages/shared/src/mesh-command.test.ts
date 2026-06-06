@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMeshCommand } from './mesh-command.js';
+import { buildMeshCommand, buildMeshVersion } from './mesh-command.js';
 import type { MeshProfile } from './types.js';
 
 const profile: MeshProfile = {
@@ -12,13 +12,28 @@ const profile: MeshProfile = {
   suggestedLocalPort: 8001,
 };
 
+describe('buildMeshVersion', () => {
+  it('appends user id to base virtual-env', () => {
+    expect(buildMeshVersion('dev.v1', 'guoming')).toBe('dev.v1.guoming');
+    expect(buildMeshVersion('dev.v1.abcd', 'guoming')).toBe('dev.v1.abcd.guoming');
+  });
+
+  it('rejects empty or dotted user id', () => {
+    expect(() => buildMeshVersion('dev.v1', '')).toThrow('个人标识不能为空');
+    expect(() => buildMeshVersion('dev.v1', 'a.b')).toThrow('个人标识不能包含点号');
+  });
+});
+
 describe('buildMeshCommand', () => {
-  it('builds ktctl mesh command matching zt-ktctl skill', () => {
-    const cmd = buildMeshCommand(profile, 8001);
+  it('builds ktctl mesh command with personal version mark', () => {
+    const cmd = buildMeshCommand(profile, 8001, 'guoming');
     expect(cmd.args).toContain('mesh');
     expect(cmd.args).toContain('ark-server');
     expect(cmd.args).toContain('--versionMark');
-    expect(cmd.args).toContain('virtual-env:dev.v2.zt07905');
+    expect(cmd.args).toContain('virtual-env:dev.v2.zt07905.guoming');
+    expect(cmd.meshVersion).toBe('dev.v2.zt07905.guoming');
+    const selector = cmd.args[cmd.args.indexOf('-l') + 1];
+    expect(selector).toContain('virtual-env=dev.v2.zt07905');
     expect(cmd.args).toContain('--expose');
     expect(cmd.args).toContain('8001:80');
     expect(cmd.args).toContain('--useShadowDeployment');

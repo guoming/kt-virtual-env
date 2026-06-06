@@ -33,6 +33,21 @@ export interface ConnectParams {
   context: string;
 }
 
+export interface ComponentCheck {
+  ok: boolean;
+  path?: string;
+  version?: string;
+  message: string;
+  hint?: string;
+}
+
+export interface EnvironmentStatus {
+  appVersion: string;
+  helper: ComponentCheck & { running: boolean };
+  ktctl: ComponentCheck;
+  kubectl: ComponentCheck;
+}
+
 export interface ForwardParams {
   service: string;
   namespace: string;
@@ -44,7 +59,7 @@ export interface ForwardParams {
 
 export type HelperInbound =
   | { cmd: 'ping' }
-  | { cmd: 'connect'; params: ConnectParams; ktctlPath: string }
+  | { cmd: 'connect'; params: ConnectParams; ktctlPath: string; ktHome: string }
   | { cmd: 'disconnect' }
   | { cmd: 'shutdown' };
 

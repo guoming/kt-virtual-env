@@ -1,4 +1,4 @@
-# zt-virtual-env 桌面工具 Implementation Plan
+# kt-virtual-env 桌面工具 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Electron 33、React 18、TypeScript 5、Vite、Tailwind CSS、Zustand、Vitest、Go 1.22（privileged-helper）、electron-builder、pnpm workspaces
 
-**Spec:** `docs/superpowers/specs/2026-06-06-zt-virtual-env-desktop-design.md`
+**Spec:** `docs/superpowers/specs/2026-06-06-kt-virtual-env-desktop-design.md`
 
 ---
 
@@ -32,7 +32,7 @@
 | `apps/desktop/src/main/session-manager.ts` | Session 状态机 |
 | `apps/desktop/src/main/helper-client.ts` | Helper IPC 客户端 |
 | `apps/desktop/src/main/k8s-service.ts` | kubectl 封装（发现、svc 列表） |
-| `apps/desktop/src/main/config-store.ts` | `~/.zt-virtual-env/config.json` |
+| `apps/desktop/src/main/config-store.ts` | `~/.kt-virtual-env/config.json` |
 | `apps/desktop/src/preload/index.ts` | contextBridge API |
 | `apps/desktop/src/renderer/` | React UI 各页面 |
 | `apps/desktop/electron-builder.yml` | 打包配置 |
@@ -52,12 +52,12 @@
 
 ```json
 {
-  "name": "zt-virtual-env",
+  "name": "kt-virtual-env",
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "dev": "pnpm --filter @zt-virtual-env/desktop dev",
+    "dev": "pnpm --filter @kt-virtual-env/desktop dev",
     "fetch-binaries": "bash scripts/fetch-binaries.sh",
     "build:helper": "cd native/privileged-helper && ./build.sh"
   },
@@ -108,7 +108,7 @@ resources/bin/**/*
 - [ ] **Step 5: 初始化 git 并提交**
 
 ```bash
-cd /Users/guoming/Codes/git.eminxing.com/fbg/tools/dev-tools/zt-virtual-env
+cd /Users/guoming/Codes/git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env
 git init
 git add package.json pnpm-workspace.yaml tsconfig.base.json .gitignore README.md
 git commit -m "chore: initialize monorepo scaffold [ai-assisted: auto, 90%]"
@@ -291,7 +291,7 @@ export function matchErrorAdvice(logText: string): ErrorAdvice | null {
 
 ```json
 {
-  "name": "@zt-virtual-env/shared",
+  "name": "@kt-virtual-env/shared",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -381,7 +381,7 @@ describe('parseDeployments', () => {
 
 ```typescript
 // packages/k8s-discovery/src/parse-deployments.ts
-import type { MeshProfile } from '@zt-virtual-env/shared';
+import type { MeshProfile } from '@kt-virtual-env/shared';
 import { suggestLocalPort } from './suggest-port';
 
 interface DeployList {
@@ -623,10 +623,10 @@ import (
 
 func main() {
   home, _ := os.UserHomeDir()
-  socketPath := filepath.Join(home, ".zt-virtual-env", "helper.sock")
+  socketPath := filepath.Join(home, ".kt-virtual-env", "helper.sock")
   os.MkdirAll(filepath.Dir(socketPath), 0700)
   os.Remove(socketPath)
-  fmt.Println("zt-virtual-env-helper listening on", socketPath)
+  fmt.Println("kt-virtual-env-helper listening on", socketPath)
   // Wire ipc.Serve + command dispatch for ping/connect/disconnect/shutdown
 }
 ```
@@ -675,7 +675,7 @@ git commit -m "feat(helper): add Go privileged helper skeleton [ai-assisted: aut
 ```bash
 cd apps/desktop
 pnpm create electron-vite@latest . --template react-ts
-pnpm add @zt-virtual-env/shared @zt-virtual-env/k8s-discovery
+pnpm add @kt-virtual-env/shared @kt-virtual-env/k8s-discovery
 pnpm add -D tailwindcss postcss autoprefixer zustand
 ```
 
@@ -694,7 +694,7 @@ npx tailwindcss init -p
 export default function App() {
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex h-12 items-center border-b px-4">zt-virtual-env</header>
+      <header className="flex h-12 items-center border-b px-4">kt-virtual-env</header>
       <div className="flex flex-1 overflow-hidden">
         <nav className="w-48 border-r p-2 text-sm">导航</nav>
         <main className="flex-1 p-4">主工作区</main>
@@ -844,7 +844,7 @@ describe('SessionManager', () => {
 
 ```typescript
 import { randomUUID } from 'node:crypto';
-import type { Session, SessionState, SessionType } from '@zt-virtual-env/shared';
+import type { Session, SessionState, SessionType } from '@kt-virtual-env/shared';
 
 const MAX_LOGS = 2000;
 
@@ -908,7 +908,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const CONFIG_DIR = path.join(os.homedir(), '.zt-virtual-env');
+const CONFIG_DIR = path.join(os.homedir(), '.kt-virtual-env');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 export interface AppConfig {
@@ -946,8 +946,8 @@ export function saveConfig(cfg: Partial<AppConfig>): AppConfig {
 ```typescript
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseDeployments } from '@zt-virtual-env/k8s-discovery';
-import type { MeshProfile } from '@zt-virtual-env/shared';
+import { parseDeployments } from '@kt-virtual-env/k8s-discovery';
+import type { MeshProfile } from '@kt-virtual-env/shared';
 import { getBundledBinary } from './binary-resolver';
 
 const execFileAsync = promisify(execFile);
@@ -1009,8 +1009,8 @@ git commit -m "feat(desktop): kubectl wrapper and config store [ai-assisted: aut
 - [ ] **Step 1: 实现 ktctl-service.ts**
 
 ```typescript
-import { buildMeshCommand } from '@zt-virtual-env/shared';
-import type { ForwardParams, MeshProfile } from '@zt-virtual-env/shared';
+import { buildMeshCommand } from '@kt-virtual-env/shared';
+import type { ForwardParams, MeshProfile } from '@kt-virtual-env/shared';
 import { getBundledBinary } from './binary-resolver';
 import { ProcessRunner } from './process-runner';
 import { SessionManager } from './session-manager';
@@ -1161,9 +1161,9 @@ export async function launchHelperElevated(): Promise<void> {
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import type { ConnectParams, HelperInbound, HelperOutbound } from '@zt-virtual-env/shared';
+import type { ConnectParams, HelperInbound, HelperOutbound } from '@kt-virtual-env/shared';
 
-const SOCKET = path.join(os.homedir(), '.zt-virtual-env', 'helper.sock');
+const SOCKET = path.join(os.homedir(), '.kt-virtual-env', 'helper.sock');
 
 export class HelperClient {
   private conn?: net.Socket;
@@ -1216,7 +1216,7 @@ git commit -m "feat(desktop): privileged helper launcher and IPC client [ai-assi
 // apps/desktop/src/preload/index.ts
 import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('ztve', {
+contextBridge.exposeInMainWorld('ktve', {
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     save: (cfg: unknown) => ipcRenderer.invoke('config:save', cfg),
@@ -1245,8 +1245,8 @@ contextBridge.exposeInMainWorld('ztve', {
 
 ```typescript
 // apps/desktop/src/renderer/lib/api.ts
-export interface ZtveApi { /* mirror preload */ }
-declare global { interface Window { ztve: ZtveApi } }
+export interface KtveApi { /* mirror preload */ }
+declare global { interface Window { ktve: KtveApi } }
 ```
 
 - [ ] **Step 3: Commit**
@@ -1281,8 +1281,8 @@ git commit -m "feat(desktop): typed preload IPC bridge [ai-assisted: auto, 80%]"
 - [ ] **Step 3: HomePage 串联刷新 + 启动 Mesh**
 
 ```tsx
-const profiles = await window.ztve.k8s.listProfiles();
-// 用户点选 → 输入 localPort → window.ztve.mesh.start(selected, localPort)
+const profiles = await window.ktve.k8s.listProfiles();
+// 用户点选 → 输入 localPort → window.ktve.mesh.start(selected, localPort)
 ```
 
 - [ ] **Step 4: 手动验证（需真实 kubeconfig）**
@@ -1372,8 +1372,8 @@ git commit -m "feat(desktop): graceful exit with session cleanup dialog [ai-assi
 - [ ] **Step 1: electron-builder.yml**
 
 ```yaml
-appId: com.zt.virtualenv
-productName: zt-virtual-env
+appId: com.kt.virtualenv
+productName: kt-virtual-env
 directories:
   output: release
 files:

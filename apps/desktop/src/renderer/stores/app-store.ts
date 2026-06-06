@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import type { MeshProfile, Session } from '@zt-virtual-env/shared';
+import type { MeshProfile, Session } from '@kt-virtual-env/shared';
 
-export type PageId = 'home' | 'connect' | 'forward' | 'mesh' | 'sessions' | 'settings';
+export type PageId = 'home' | 'stain' | 'connect' | 'forward' | 'settings';
 
 interface AppState {
   page: PageId;
@@ -17,7 +17,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  page: 'home',
+  page: 'settings',
   sessions: [],
   profiles: [],
   helperRunning: false,
