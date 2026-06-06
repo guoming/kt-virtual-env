@@ -45,7 +45,9 @@ jobs:
         run: pnpm fetch-binaries darwin-arm64
 
       - name: Build privileged helper
-        run: pnpm build:helper:mac
+        env:
+          KTVE_HELPER_TARGETS: mac
+        run: bash native/privileged-helper/build.sh
 
       - name: Unit tests
         run: pnpm test

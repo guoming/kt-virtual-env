@@ -9,8 +9,8 @@
     "docs:screenshots": "node scripts/capture-docs-screenshots.mjs",
     "fetch-binaries": "bash scripts/fetch-binaries.sh",
     "build:helper": "bash native/privileged-helper/build.sh",
-    "build:helper:mac": "KTVE_HELPER_TARGETS=mac bash native/privileged-helper/build.sh",
-    "build:helper:win": "KTVE_HELPER_TARGETS=win bash native/privileged-helper/build.sh",
+    "build:helper:mac": "cross-env KTVE_HELPER_TARGETS=mac bash native/privileged-helper/build.sh",
+    "build:helper:win": "cross-env KTVE_HELPER_TARGETS=win bash native/privileged-helper/build.sh",
     "pack:mac": "pnpm --filter @kt-virtual-env/desktop pack:mac",
     "pack:win": "pnpm --filter @kt-virtual-env/desktop pack:win"
   },
@@ -19,6 +19,7 @@
   },
   "packageManager": "pnpm@9.15.0",
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "playwright": "^1.60.0"
   }
 }
