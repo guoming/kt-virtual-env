@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - 'release/**'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download ktctl / kubectl (linux host → darwin-arm64 for compile check)
+        run: pnpm fetch-binaries darwin-arm64
+
+      - name: Build privileged helper
+        run: pnpm build:helper:mac
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Build desktop renderer & main
+        run: pnpm --filter @kt-virtual-env/desktop build

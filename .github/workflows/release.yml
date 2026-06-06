@@ -4,7 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'release/**'
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 要构建的分支或 tag（例如 v0.1.0）
+        required: false
+        default: main
+      create_release:
+        description: 是否创建 GitHub Release（分支构建可仅上传 Artifact）
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -20,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -44,7 +57,7 @@ jobs:
         run: pnpm fetch-binaries darwin-arm64 darwin-amd64
 
       - name: Build privileged helper
-        run: pnpm build:helper
+        run: pnpm build:helper:mac
 
       - name: Build workspace packages
         run: pnpm build
@@ -73,6 +86,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -97,7 +112,7 @@ jobs:
         run: pnpm fetch-binaries windows-amd64
 
       - name: Build privileged helper
-        run: pnpm build:helper
+        run: pnpm build:helper:win
 
       - name: Build workspace packages
         run: pnpm build
@@ -118,7 +133,20 @@ jobs:
     name: Publish GitHub Release
     needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.create_release)
     steps:
+      - name: Resolve release tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ inputs.ref }}" == v* ]]; then
+            echo "tag=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
       - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
@@ -142,8 +170,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.meta.outputs.tag }}
           files: |
             dist/release/assets/*
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
