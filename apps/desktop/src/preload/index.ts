@@ -71,6 +71,24 @@ export interface KtveApi {
       virtualEnv: string,
     ) => Promise<{ id: string; warning?: string }>;
     pickExtensionDir: () => Promise<string | null>;
+    installFromStore: (input: string) => Promise<{
+      id: string;
+      name: string;
+      version: string;
+      path: string;
+      paths: string[];
+    }>;
+    installFromCrxFile: (extensionIdHint?: string) => Promise<{
+      id: string;
+      name: string;
+      version: string;
+      path: string;
+      paths: string[];
+    } | null>;
+    listLocalChromeExtensions: () => Promise<
+      Array<{ id: string; name: string; version: string; path: string }>
+    >;
+    openChromeWebStore: () => Promise<void>;
     list: () => Promise<Array<{ id: string; url: string; virtualEnv: string; title: string }>>;
     close: (id: string) => Promise<void>;
     closeAll: () => Promise<void>;
@@ -160,6 +178,11 @@ const api: KtveApi = {
   stain: {
     open: (url, virtualEnv) => ipcRenderer.invoke('stain:open', url, virtualEnv),
     pickExtensionDir: () => ipcRenderer.invoke('stain:pickExtensionDir'),
+    installFromStore: (input) => ipcRenderer.invoke('stain:installFromStore', input),
+    installFromCrxFile: (extensionIdHint) =>
+      ipcRenderer.invoke('stain:installFromCrxFile', extensionIdHint),
+    listLocalChromeExtensions: () => ipcRenderer.invoke('stain:listLocalChromeExtensions'),
+    openChromeWebStore: () => ipcRenderer.invoke('stain:openChromeWebStore'),
     list: () => ipcRenderer.invoke('stain:list'),
     close: (id) => ipcRenderer.invoke('stain:close', id),
     closeAll: () => ipcRenderer.invoke('stain:closeAll'),

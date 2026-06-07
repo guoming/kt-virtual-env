@@ -71,6 +71,24 @@ export interface KtveApi {
   stain: {
     open: (url: string, virtualEnv: string) => Promise<{ id: string; warning?: string }>;
     pickExtensionDir: () => Promise<string | null>;
+    installFromStore: (input: string) => Promise<{
+      id: string;
+      name: string;
+      version: string;
+      path: string;
+      paths: string[];
+    }>;
+    installFromCrxFile: (extensionIdHint?: string) => Promise<{
+      id: string;
+      name: string;
+      version: string;
+      path: string;
+      paths: string[];
+    } | null>;
+    listLocalChromeExtensions: () => Promise<
+      Array<{ id: string; name: string; version: string; path: string }>
+    >;
+    openChromeWebStore: () => Promise<void>;
     list: () => Promise<Array<{ id: string; url: string; virtualEnv: string; title: string }>>;
     close: (id: string) => Promise<void>;
     closeAll: () => Promise<void>;

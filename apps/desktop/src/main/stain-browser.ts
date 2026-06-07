@@ -1,5 +1,5 @@
 // [AI-GEN] scope:stain-browser, model:auto, reviewed:false
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { BrowserWindow, session, type Session } from 'electron';
 import { loadStainExtensions } from './stain-extensions.js';
 
@@ -24,6 +24,27 @@ interface StainEntry {
 }
 
 const stainBrowsers = new Map<string, StainEntry>();
+/** 已注入请求头/扩展的持久化 session，避免重复注册监听器 */
+const preparedPartitions = new Set<string>();
+
+/** 扩展列表变更后调用，使新扩展在下次打开染色窗口时生效 */
+export function resetPreparedStainSessions(): void {
+  preparedPartitions.clear();
+}
+
+export function buildStainSessionPartition(normalizedUrl: string, virtualEnv: string): string {
+  let origin: string;
+  try {
+    origin = new URL(normalizedUrl).origin;
+  } catch {
+    origin = normalizedUrl;
+  }
+  const hash = createHash('sha256')
+    .update(`${origin}\0${virtualEnv}`)
+    .digest('hex')
+    .slice(0, 16);
+  return `persist:stain-${hash}`;
+}
 
 function normalizeUrl(input: string): string {
   const trimmed = input.trim();
@@ -56,6 +77,20 @@ async function prepareStainSession(
   return undefined;
 }
 
+async function ensureStainSession(
+  partition: string,
+  virtualEnv: string,
+  extensionPaths: string[],
+): Promise<{ ses: Session; warning?: string }> {
+  const ses = session.fromPartition(partition);
+  if (preparedPartitions.has(partition)) {
+    return { ses };
+  }
+  const warning = await prepareStainSession(ses, virtualEnv, extensionPaths);
+  preparedPartitions.add(partition);
+  return { ses, warning };
+}
+
 export async function openStainBrowser(
   url: string,
   virtualEnv: string,
@@ -69,8 +104,12 @@ export async function openStainBrowser(
   }
 
   const extensionPaths = options.extensionPaths ?? [];
-  const ses = session.fromPartition(`persist:stain-${id}`);
-  const extensionWarning = await prepareStainSession(ses, value, extensionPaths);
+  const partition = buildStainSessionPartition(normalizedUrl, value);
+  const { ses, warning: extensionWarning } = await ensureStainSession(
+    partition,
+    value,
+    extensionPaths,
+  );
 
   const win = new BrowserWindow({
     width: 1280,

@@ -44,8 +44,13 @@ export function StainPage() {
   >([]);
   const [stainDevTools, setStainDevTools] = useState(false);
   const [stainExtensionPaths, setStainExtensionPaths] = useState<string[]>([]);
+  const [storeExtensionInput, setStoreExtensionInput] = useState('');
+  const [localChromeExtensions, setLocalChromeExtensions] = useState<
+    Array<{ id: string; name: string; version: string; path: string }>
+  >([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [installingExtension, setInstallingExtension] = useState(false);
 
   const effectiveVirtualEnv = useMemo(
     () => resolveStainVirtualEnv(virtualEnvInput, meshUserId),
@@ -78,6 +83,10 @@ export function StainPage() {
       setStainExtensionPaths(c.stainExtensionPaths ?? []);
     });
     void refreshList();
+    void requireKtveApi()
+      .stain.listLocalChromeExtensions()
+      .then(setLocalChromeExtensions)
+      .catch(() => setLocalChromeExtensions([]));
     const timer = setInterval(() => void refreshList(), 2000);
     return () => clearInterval(timer);
   }, [refreshList]);
@@ -93,17 +102,55 @@ export function StainPage() {
     await saveStainDevOptions({ stainDevTools: enabled });
   };
 
-  const addExtensionDir = async () => {
-    const dir = await requireKtveApi().stain.pickExtensionDir();
-    if (!dir) return;
+  const addExtensionPath = async (dir: string, label?: string) => {
     if (stainExtensionPaths.includes(dir)) {
-      setMessage('该扩展目录已添加');
+      setMessage('该扩展已添加');
       return;
     }
     const next = [...stainExtensionPaths, dir];
     setStainExtensionPaths(next);
     await saveStainDevOptions({ stainExtensionPaths: next });
-    setMessage(`已添加扩展目录：${dir}`);
+    setMessage(label ? `已添加扩展：${label}` : `已添加扩展目录：${dir}`);
+  };
+
+  const addExtensionDir = async () => {
+    const dir = await requireKtveApi().stain.pickExtensionDir();
+    if (!dir) return;
+    await addExtensionPath(dir);
+  };
+
+  const installFromChromeWebStore = async () => {
+    const input = storeExtensionInput.trim();
+    if (!input) {
+      setMessage('请输入 Chrome 网上应用店链接或扩展 ID');
+      return;
+    }
+    setInstallingExtension(true);
+    try {
+      const installed = await requireKtveApi().stain.installFromStore(input);
+      setStainExtensionPaths(installed.paths);
+      setStoreExtensionInput('');
+      const source = installed.name.includes('本机 Chrome') ? '本机 Chrome' : '网上应用店';
+      setMessage(`已安装扩展（${source}）：${installed.name}（v${installed.version}）`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallingExtension(false);
+    }
+  };
+
+  const installFromCrxFile = async () => {
+    setInstallingExtension(true);
+    try {
+      const installed = await requireKtveApi().stain.installFromCrxFile(storeExtensionInput.trim());
+      if (!installed) return;
+      setStainExtensionPaths(installed.paths);
+      setMessage(`已导入扩展：${installed.name}（v${installed.version}）`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstallingExtension(false);
+    }
   };
 
   const removeExtensionDir = async (dir: string) => {
@@ -225,44 +272,118 @@ export function StainPage() {
             />
             开发模式（打开染色窗口时自动启用 DevTools，停靠在窗口底部，按 F12 可切换）
           </label>
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm text-gray-700">Chrome 扩展（解压目录）</span>
-              <button
-                type="button"
-                className="rounded border bg-white px-2 py-1 text-xs hover:bg-gray-100"
-                onClick={() => void addExtensionDir()}
-              >
-                添加扩展目录
-              </button>
-            </div>
-            {stainExtensionPaths.length === 0 ? (
+          {stainDevTools && (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm text-gray-700">从 Chrome 网上应用店安装</span>
+                <button
+                  type="button"
+                  className="rounded border bg-white px-2 py-1 text-xs hover:bg-gray-100"
+                  onClick={() => void requireKtveApi().stain.openChromeWebStore()}
+                >
+                  打开应用店
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  className="min-w-[16rem] flex-1 rounded border px-2 py-1.5 text-sm"
+                  placeholder="粘贴网上应用店链接或 32 位扩展 ID"
+                  value={storeExtensionInput}
+                  onChange={(e) => setStoreExtensionInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void installFromChromeWebStore();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-gray-100 disabled:opacity-50"
+                  disabled={installingExtension}
+                  onClick={() => void installFromChromeWebStore()}
+                >
+                  {installingExtension ? '安装中…' : '安装扩展'}
+                </button>
+                <button
+                  type="button"
+                  className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-gray-100 disabled:opacity-50"
+                  disabled={installingExtension}
+                  onClick={() => void installFromCrxFile()}
+                >
+                  导入 CRX
+                </button>
+              </div>
               <p className="text-xs text-gray-500">
-                选择含 manifest.json 的扩展文件夹。可从 Chrome「扩展程序 → 开发者模式 → 打包扩展」解压，
-                或进入 Chrome 扩展安装目录选择版本子目录。
+                在应用店复制扩展页面链接后粘贴安装；若网络无法访问 Google，会尝试从本机 Chrome
+                已安装扩展导入，也可手动选择 CRX/ZIP 文件。
               </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {stainExtensionPaths.map((dir) => (
-                  <li
-                    key={dir}
-                    className="flex items-start justify-between gap-2 rounded border bg-white px-2 py-1.5 text-xs"
-                  >
-                    <span className="min-w-0 break-all font-mono text-gray-700" title={dir}>
-                      {dir}
-                    </span>
-                    <button
-                      type="button"
-                      className="shrink-0 text-red-600 hover:underline"
-                      onClick={() => void removeExtensionDir(dir)}
+            </div>
+
+            {localChromeExtensions.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-sm text-gray-700">从本机 Chrome 导入</span>
+                <ul className="max-h-36 space-y-1 overflow-y-auto">
+                  {localChromeExtensions.map((ext) => (
+                    <li
+                      key={`${ext.id}-${ext.version}`}
+                      className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5 text-xs"
                     >
-                      删除
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                      <span className="min-w-0 truncate text-gray-700" title={ext.path}>
+                        {ext.name}{' '}
+                        <span className="text-gray-400">v{ext.version}</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-blue-600 hover:underline"
+                        onClick={() => void addExtensionPath(ext.path, `${ext.name} v${ext.version}`)}
+                      >
+                        添加
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm text-gray-700">已启用的扩展</span>
+                <button
+                  type="button"
+                  className="rounded border bg-white px-2 py-1 text-xs hover:bg-gray-100"
+                  onClick={() => void addExtensionDir()}
+                >
+                  添加本地目录
+                </button>
+              </div>
+              {stainExtensionPaths.length === 0 ? (
+                <p className="text-xs text-gray-500">
+                  也可手动选择含 manifest.json 的解压目录。
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {stainExtensionPaths.map((dir) => (
+                    <li
+                      key={dir}
+                      className="flex items-start justify-between gap-2 rounded border bg-white px-2 py-1.5 text-xs"
+                    >
+                      <span className="min-w-0 break-all font-mono text-gray-700" title={dir}>
+                        {dir}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-red-600 hover:underline"
+                        onClick={() => void removeExtensionDir(dir)}
+                      >
+                        删除
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
+          )}
         </div>
 
         <button

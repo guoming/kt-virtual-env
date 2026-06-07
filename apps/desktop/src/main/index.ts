@@ -13,11 +13,18 @@ import { stageKubeconfigForElevated, stageKtctlForElevated } from './elevated-bi
 import { ensureUserKtReady, getElevatedKtHome } from './kt-state.js';
 import { defaultChromeExtensionsDir } from './stain-extensions.js';
 import {
+  CHROME_WEB_STORE_HOME,
+  installExtensionFromChromeWebStore,
+  installExtensionFromCrxFile,
+  listLocalChromeExtensions,
+} from './stain-extension-store.js';
+import {
   closeAllStainBrowsers,
   closeStainBrowser,
   focusStainBrowser,
   listStainBrowsers,
   openStainBrowser,
+  resetPreparedStainSessions,
   toggleStainBrowserDevTools,
 } from './stain-browser.js';
 import { checkEnvironment } from './environment-check.js';
@@ -240,7 +247,17 @@ function requestQuit(): void {
 
 function registerIpc(): void {
   ipcMain.handle('config:get', () => loadConfig());
-  ipcMain.handle('config:save', async (_e, cfg) => saveConfig(cfg));
+  ipcMain.handle('config:save', async (_e, cfg) => {
+    const prev = loadConfig();
+    const merged = await saveConfig(cfg);
+    if (
+      cfg.stainExtensionPaths &&
+      JSON.stringify(prev.stainExtensionPaths) !== JSON.stringify(merged.stainExtensionPaths)
+    ) {
+      resetPreparedStainSessions();
+    }
+    return merged;
+  });
   ipcMain.handle('config:pickKubeconfig', async () => {
     const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
       properties: ['openFile'],
@@ -405,6 +422,36 @@ function registerIpc(): void {
       extensionPaths: cfg.stainExtensionPaths,
     });
   });
+  ipcMain.handle('stain:installFromStore', async (_e, input: string) => {
+    const installed = await installExtensionFromChromeWebStore(input);
+    const cfg = loadConfig();
+    const paths = cfg.stainExtensionPaths.includes(installed.path)
+      ? cfg.stainExtensionPaths
+      : [...cfg.stainExtensionPaths, installed.path];
+    await saveConfig({ stainExtensionPaths: paths });
+    resetPreparedStainSessions();
+    return { ...installed, paths };
+  });
+  ipcMain.handle('stain:installFromCrxFile', async (_e, extensionIdHint?: string) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Chrome 扩展', extensions: ['crx', 'zip'] }],
+      title: '选择 CRX 或 ZIP 扩展包',
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const filePath = result.filePaths[0];
+    if (!filePath) return null;
+    const installed = await installExtensionFromCrxFile(filePath, extensionIdHint);
+    const cfg = loadConfig();
+    const paths = cfg.stainExtensionPaths.includes(installed.path)
+      ? cfg.stainExtensionPaths
+      : [...cfg.stainExtensionPaths, installed.path];
+    await saveConfig({ stainExtensionPaths: paths });
+    resetPreparedStainSessions();
+    return { ...installed, paths };
+  });
+  ipcMain.handle('stain:listLocalChromeExtensions', () => listLocalChromeExtensions());
+  ipcMain.handle('stain:openChromeWebStore', () => shell.openExternal(CHROME_WEB_STORE_HOME));
   ipcMain.handle('stain:pickExtensionDir', async () => {
     const chromeDir = defaultChromeExtensionsDir();
     const result = await dialog.showOpenDialog({
