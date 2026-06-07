@@ -5,6 +5,7 @@ import { getBundledBinary } from './binary-resolver.js';
 import { ProcessRunner } from './process-runner.js';
 import { SessionManager } from './session-manager.js';
 import { loadConfig } from './config-store.js';
+import type { RestartSpecRegistry } from './restart-spec-registry.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -13,7 +14,10 @@ const execFileAsync = promisify(execFile);
 export class KtctlService {
   private runners = new Map<string, ProcessRunner>();
 
-  constructor(private sessions: SessionManager) {}
+  constructor(
+    private sessions: SessionManager,
+    private registry: RestartSpecRegistry,
+  ) {}
 
   startForward(params: ForwardParams): string {
     const ktctl = getBundledBinary('ktctl');
@@ -29,10 +33,12 @@ export class KtctlService {
     if (params.context) {
       args.push('--context', params.context);
     }
-    return this.spawnKtctl('forward', params.service, params.namespace, args, {
+    const sessionId = this.spawnKtctl('forward', params.service, params.namespace, args, {
       localPort: params.localPort,
       remotePort: params.remotePort,
     });
+    this.registry.setForward(sessionId, params);
+    return sessionId;
   }
 
   startMesh(profile: MeshProfile, localPort: number, userId: string): string {
@@ -42,11 +48,13 @@ export class KtctlService {
     if (cfg.context) {
       args.push('--context', cfg.context);
     }
-    return this.spawnKtctl('mesh', profile.deploymentName, profile.namespace, args, {
+    const sessionId = this.spawnKtctl('mesh', profile.deploymentName, profile.namespace, args, {
       localPort,
       virtualEnv: meshVersion,
       commandOverride: display,
     });
+    this.registry.setMesh(sessionId, profile, localPort, userId);
+    return sessionId;
   }
 
   private spawnKtctl(
@@ -75,6 +83,7 @@ export class KtctlService {
         return;
       }
       if (current.state === 'stopped') {
+        this.registry.delete(session.id);
         this.sessions.remove(session.id);
         this.runners.delete(session.id);
         return;
@@ -86,6 +95,7 @@ export class KtctlService {
         signal === 'SIGINT' ||
         signal === 'SIGKILL';
       if (gracefulExit) {
+        this.registry.delete(session.id);
         this.sessions.remove(session.id);
       } else {
         this.sessions.markFailed(session.id);
@@ -114,6 +124,7 @@ export class KtctlService {
         // recover 尽力而为，停止后会话将从面板移除
       }
     }
+    this.registry.delete(id);
     this.sessions.remove(id);
   }
 

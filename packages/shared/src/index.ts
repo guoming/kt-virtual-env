@@ -6,3 +6,5 @@ export * from './health.js';
 export * from './local-dev-port.js';
 export * from './stain-url-history.js';
 export * from './stain-virtual-env.js';
+export * from './version.js';
+export * from './update.js';

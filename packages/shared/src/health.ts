@@ -7,12 +7,20 @@ export interface HealthCheckResult {
   message: string;
   details: string[];
   checkedAt: string;
+  recovering?: boolean;
+  autoRecoveryCount?: number;
+}
+
+export interface HealthSnapshot {
+  connect: HealthCheckResult | null;
+  sessions: Record<string, HealthCheckResult>;
 }
 
 export function buildHealthResult(
   level: HealthLevel,
   message: string,
   details: string[] = [],
+  extras?: Pick<HealthCheckResult, 'recovering' | 'autoRecoveryCount'>,
 ): HealthCheckResult {
   return {
     level,
@@ -20,6 +28,7 @@ export function buildHealthResult(
     message,
     details,
     checkedAt: new Date().toISOString(),
+    ...extras,
   };
 }
 // [/AI-GEN]

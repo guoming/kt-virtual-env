@@ -178,15 +178,11 @@ export function HomePage() {
     () => activeMeshes.map((s) => s.id),
     [activeMeshes],
   );
-  const runMeshHealth = useCallback(
-    () => requireKtveApi().health.checkSessionsByType('mesh'),
-    [],
-  );
   const {
     map: meshHealthMap,
     loading: meshHealthLoading,
     refresh: refreshMeshHealth,
-  } = useSessionsHealthPolling(runMeshHealth, activeMeshIds);
+  } = useSessionsHealthPolling(activeMeshIds);
   const meshHealthSummary = useMemo(
     () => summarizeHealth(activeMeshes.map((s) => meshHealthMap[s.id]).filter(Boolean)),
     [activeMeshes, meshHealthMap],
@@ -282,46 +278,34 @@ export function HomePage() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold">流量转发 (Mesh)</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          多人可同时转发同一虚拟环境（如 <span className="font-mono">dev.v1</span>），
-          通过个人标识隔离流量。你的 {MESH_HEADER} 为{' '}
-          <span className="font-mono text-indigo-700">dev.v1.&lt;个人标识&gt;</span>，例如{' '}
-          <span className="font-mono text-indigo-700">dev.v1.developer</span>。
-        </p>
-      </div>
-
-      {meshUserId ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-          当前个人标识：<code className="font-mono font-semibold">{meshUserId}</code>
-          <span className="mx-2 text-gray-400">·</span>
-          示例 {MESH_HEADER}：
-          <code className="font-mono text-indigo-800">
-            {previewMeshVersion('dev.v1', meshUserId) ?? 'dev.v1.developer'}
-          </code>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <span>请先在配置页填写个人标识</span>
-          <button
-            className="rounded border border-amber-300 bg-white px-2 py-0.5 text-xs hover:bg-amber-100"
-            onClick={() => setPage('settings')}
-          >
-            前往配置
-          </button>
-        </div>
-      )}
-
-      <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950">
-        <div className="font-medium">如何使用</div>
-        <ol className="mt-1.5 list-inside list-decimal space-y-1 text-indigo-900/90">
-          <li>
-            在配置页保存个人标识，为服务选择或输入<strong>本地应用端口</strong>后点击「转发到本地」
-          </li>
-          <li>
-            请求头使用 <code className="rounded bg-white/80 px-1">x-virtual-env: dev.v1.developer</code>（集群环境 + 个人标识）
-          </li>
-          <li>不同研发使用不同个人标识，互不影响</li>
-        </ol>
+        {meshUserId ? (
+          <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950">
+            <p>
+              多人可同时转发同一虚拟环境（如 <span className="font-mono">dev.v1</span>
+              ），通过<strong>个人标识</strong>隔离流量，互不影响。当前标识{' '}
+              <code className="font-mono font-semibold">{meshUserId}</code>，请求头{' '}
+              <code className="font-mono">{MESH_HEADER}</code> 使用{' '}
+              <code className="font-mono text-indigo-800">
+                {previewMeshVersion('dev.v1', meshUserId) ?? `dev.v1.${meshUserId}`}
+              </code>
+              。在下方选择<strong>本地应用端口</strong>后点击「转发到本地」即可。
+            </p>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span>
+              多人可同时转发同一虚拟环境，通过个人标识隔离流量。请先在配置页保存个人标识（格式{' '}
+              <span className="font-mono">dev.v1.&lt;个人标识&gt;</span>，如{' '}
+              <span className="font-mono">dev.v1.developer</span>），再选择本地端口并点击「转发到本地」。
+            </span>
+            <button
+              className="shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 text-xs hover:bg-amber-100"
+              onClick={() => setPage('settings')}
+            >
+              前往配置
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">

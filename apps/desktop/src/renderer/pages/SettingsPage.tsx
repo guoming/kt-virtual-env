@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { requireKtveApi } from '../lib/api';
-import { APP_NAME, APP_SLOGAN } from '../lib/branding';
+import { AppUpdatePanel } from '../components/AppUpdatePanel';
+import { VersionCompareLine } from '../components/VersionCompareLine';
 import { useAppStore } from '../stores/app-store';
 import type { EnvironmentStatus } from '@kt-virtual-env/shared';
 
@@ -14,11 +15,13 @@ function CheckItem({
   title,
   description,
   check,
+  latestVersion,
   action,
 }: {
   title: string;
   description?: string;
   check: { ok: boolean; message: string; version?: string; hint?: string };
+  latestVersion?: string;
   action?: ReactNode;
 }) {
   return (
@@ -36,7 +39,7 @@ function CheckItem({
             <p className="mt-1.5 text-xs leading-relaxed text-gray-500">{description}</p>
           )}
           {check.version && (
-            <p className="mt-1 font-mono text-xs text-gray-500">{check.version}</p>
+            <VersionCompareLine current={check.version} latest={latestVersion} />
           )}
           {!check.ok && check.hint && (
             <p className="mt-2 text-xs text-amber-800">{check.hint}</p>
@@ -110,10 +113,7 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="mb-2">
-        <h2 className="text-lg font-semibold">{APP_NAME}</h2>
-        <p className="text-sm text-gray-500">{APP_SLOGAN}</p>
-      </div>
+      <AppUpdatePanel />
 
       <div className="rounded-lg border bg-gray-50 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -149,8 +149,16 @@ export function SettingsPage() {
               </button>
             }
           />
-          <CheckItem title="ktctl" check={env?.ktctl ?? { ok: false, message: '未检测' }} />
-          <CheckItem title="kubectl" check={env?.kubectl ?? { ok: false, message: '未检测' }} />
+          <CheckItem
+            title="ktctl"
+            check={env?.ktctl ?? { ok: false, message: '未检测' }}
+            latestVersion={env?.bundledKtctlVersion}
+          />
+          <CheckItem
+            title="kubectl"
+            check={env?.kubectl ?? { ok: false, message: '未检测' }}
+            latestVersion={env?.bundledKubectlVersion}
+          />
         </ul>
 
         <div
@@ -164,10 +172,6 @@ export function SettingsPage() {
             ? '环境检测通过，可继续进行网络连接与流量转发。'
             : '环境未就绪：请按上方提示安装工具或完成组网授权后重新检测。'}
         </div>
-
-        {env && (
-          <p className="mt-2 text-xs text-gray-500">应用版本：{env.appVersion}</p>
-        )}
       </div>
 
       <h3 className="text-base font-medium">集群与个人配置</h3>

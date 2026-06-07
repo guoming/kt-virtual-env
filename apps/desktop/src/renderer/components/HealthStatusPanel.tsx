@@ -58,6 +58,14 @@ export function HealthStatusPanel({ title, result, loading, onRefresh }: PanelPr
           <p className={`mt-1 text-sm ${style.text}`}>
             {loading ? '检测中…' : (result?.message ?? '尚未检测')}
           </p>
+          {result?.recovering && (
+            <p className={`mt-1 text-xs ${style.text} opacity-90`}>
+              自动恢复中…
+              {result.autoRecoveryCount != null && result.autoRecoveryCount > 0
+                ? `（已恢复 ${result.autoRecoveryCount} 次）`
+                : ''}
+            </p>
+          )}
           {result && result.details.length > 0 && (
             <ul className={`mt-2 space-y-0.5 text-xs ${style.text} opacity-90`}>
               {result.details.map((line) => (

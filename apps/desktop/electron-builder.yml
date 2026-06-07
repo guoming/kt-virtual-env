@@ -11,6 +11,7 @@ artifactName: kt-virtual-env-${version}-${os}-${arch}.${ext}
 mac:
   target:
     - dmg
+    - zip
   category: public.app-category.developer-tools
   artifactName: kt-virtual-env-${version}-mac-${arch}.${ext}
   extendInfo:
@@ -27,3 +28,8 @@ nsis:
   uninstallDisplayName: kt-virtual-env
   oneClick: false
   allowToChangeInstallationDirectory: true
+publish:
+  provider: github
+  owner: guoming
+  repo: kt-virtual-env
+  releaseType: release

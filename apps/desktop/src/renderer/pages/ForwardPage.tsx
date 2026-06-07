@@ -136,15 +136,11 @@ export function ForwardPage() {
     () => activeForwards.map((s) => s.id),
     [activeForwards],
   );
-  const runForwardHealth = useCallback(
-    () => requireKtveApi().health.checkSessionsByType('forward'),
-    [],
-  );
   const {
     map: forwardHealthMap,
     loading: forwardHealthLoading,
     refresh: refreshForwardHealth,
-  } = useSessionsHealthPolling(runForwardHealth, activeForwardIds);
+  } = useSessionsHealthPolling(activeForwardIds);
   const forwardHealthSummary = useMemo(
     () =>
       summarizeHealth(activeForwards.map((s) => forwardHealthMap[s.id]).filter(Boolean)),

@@ -1,9 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  AppUpdateStatus,
   ConnectParams,
   EnvironmentStatus,
   ForwardParams,
   HealthCheckResult,
+  HealthSnapshot,
   LocalDevPort,
   MeshProfile,
   Session,
@@ -21,6 +23,14 @@ export interface KtveApi {
     checkEnvironment: () => Promise<EnvironmentStatus>;
     onConfirmExit: (cb: (count: number) => void) => () => void;
     forceQuit: (action: 'stopAll' | 'cancel') => Promise<void>;
+  };
+  update: {
+    getStatus: () => Promise<AppUpdateStatus>;
+    check: () => Promise<AppUpdateStatus>;
+    install: () => Promise<
+      { ok: true } | { ok: false; reason: 'sessions'; count: number }
+    >;
+    onChanged: (cb: (status: AppUpdateStatus) => void) => () => void;
   };
   k8s: {
     listProfiles: () => Promise<MeshProfile[]>;
@@ -68,6 +78,9 @@ export interface KtveApi {
     toggleDevTools: (id: string) => Promise<void>;
   };
   health: {
+    getSnapshot: () => Promise<HealthSnapshot>;
+    forceCheck: () => Promise<HealthSnapshot>;
+    onChanged: (cb: (snapshot: HealthSnapshot) => void) => () => void;
     checkConnect: () => Promise<HealthCheckResult>;
     checkSession: (id: string) => Promise<HealthCheckResult>;
     checkSessionsByType: (type: SessionType) => Promise<Record<string, HealthCheckResult>>;
@@ -95,6 +108,16 @@ const api: KtveApi = {
       return () => ipcRenderer.removeListener('app:confirmExit', handler);
     },
     forceQuit: (action) => ipcRenderer.invoke('app:forceQuit', action),
+  },
+  update: {
+    getStatus: () => ipcRenderer.invoke('update:getStatus'),
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onChanged: (cb) => {
+      const handler = (_: unknown, status: AppUpdateStatus) => cb(status);
+      ipcRenderer.on('update:changed', handler);
+      return () => ipcRenderer.removeListener('update:changed', handler);
+    },
   },
   k8s: {
     listProfiles: () => ipcRenderer.invoke('k8s:listProfiles'),
@@ -144,6 +167,13 @@ const api: KtveApi = {
     toggleDevTools: (id) => ipcRenderer.invoke('stain:toggleDevTools', id),
   },
   health: {
+    getSnapshot: () => ipcRenderer.invoke('health:getSnapshot'),
+    forceCheck: () => ipcRenderer.invoke('health:forceCheck'),
+    onChanged: (cb) => {
+      const handler = (_: unknown, snapshot: HealthSnapshot) => cb(snapshot);
+      ipcRenderer.on('health:changed', handler);
+      return () => ipcRenderer.removeListener('health:changed', handler);
+    },
     checkConnect: () => ipcRenderer.invoke('health:checkConnect'),
     checkSession: (id) => ipcRenderer.invoke('health:checkSession', id),
     checkSessionsByType: (type) => ipcRenderer.invoke('health:checkSessionsByType', type),

@@ -1,8 +1,10 @@
 import type {
+  AppUpdateStatus,
   ConnectParams,
   EnvironmentStatus,
   ForwardParams,
   HealthCheckResult,
+  HealthSnapshot,
   LocalDevPort,
   MeshProfile,
   Session,
@@ -20,6 +22,14 @@ export interface KtveApi {
     checkEnvironment: () => Promise<EnvironmentStatus>;
     onConfirmExit: (cb: (count: number) => void) => () => void;
     forceQuit: (action: 'stopAll' | 'cancel') => Promise<void>;
+  };
+  update: {
+    getStatus: () => Promise<AppUpdateStatus>;
+    check: () => Promise<AppUpdateStatus>;
+    install: () => Promise<
+      { ok: true } | { ok: false; reason: 'sessions'; count: number }
+    >;
+    onChanged: (cb: (status: AppUpdateStatus) => void) => () => void;
   };
   k8s: {
     listProfiles: () => Promise<MeshProfile[]>;
@@ -68,6 +78,9 @@ export interface KtveApi {
     toggleDevTools: (id: string) => Promise<void>;
   };
   health: {
+    getSnapshot: () => Promise<HealthSnapshot>;
+    forceCheck: () => Promise<HealthSnapshot>;
+    onChanged: (cb: (snapshot: HealthSnapshot) => void) => () => void;
     checkConnect: () => Promise<HealthCheckResult>;
     checkSession: (id: string) => Promise<HealthCheckResult>;
     checkSessionsByType: (type: SessionType) => Promise<Record<string, HealthCheckResult>>;

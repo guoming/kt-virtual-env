@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Session } from '@kt-virtual-env/shared';
+import type { HealthSnapshot, Session } from '@kt-virtual-env/shared';
 import { HealthStatusPanel } from '../components/HealthStatusPanel';
 import { useHealthPolling } from '../hooks/use-health-polling';
 import { requireKtveApi } from '../lib/api';
@@ -52,15 +52,12 @@ export function ConnectPage() {
     connectSession?.state === 'starting' ||
     connectSession?.state === 'pending';
 
-  const runConnectHealth = useCallback(
-    () => requireKtveApi().health.checkConnect(),
-    [],
-  );
+  const selectConnect = useCallback((snapshot: HealthSnapshot) => snapshot.connect, []);
   const {
     result: healthResult,
     loading: healthLoading,
     refresh: refreshHealth,
-  } = useHealthPolling(runConnectHealth, true);
+  } = useHealthPolling(selectConnect, true);
 
   useEffect(() => {
     void requireKtveApi().k8s.listNamespaces().then((ns) => {

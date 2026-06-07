@@ -5,6 +5,8 @@ import { promisify } from 'node:util';
 import { app } from 'electron';
 import type { ComponentCheck, EnvironmentStatus } from '@kt-virtual-env/shared';
 import { findBundledBinary, findHelperPath } from './binary-resolver.js';
+import { fetchLatestAppVersion } from './app-release-check.js';
+import { loadBundledVersions } from './bundled-versions.js';
 import { isHelperRunning } from './helper-launcher.js';
 
 const execFileAsync = promisify(execFile);
@@ -91,13 +93,18 @@ async function checkHelper(): Promise<ComponentCheck & { running: boolean }> {
 }
 
 export async function checkEnvironment(): Promise<EnvironmentStatus> {
-  const [helper, ktctl, kubectl] = await Promise.all([
+  const bundled = loadBundledVersions();
+  const [helper, ktctl, kubectl, appLatestVersion] = await Promise.all([
     checkHelper(),
     checkCliTool('ktctl'),
     checkCliTool('kubectl'),
+    fetchLatestAppVersion(),
   ]);
   return {
     appVersion: app.getVersion(),
+    appLatestVersion,
+    bundledKtctlVersion: bundled.ktctl.version,
+    bundledKubectlVersion: bundled.kubectl.version,
     helper,
     ktctl,
     kubectl,

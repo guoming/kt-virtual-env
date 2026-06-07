@@ -45,6 +45,10 @@ module.exports = {
       from: path.join(__dirname, 'resources/helper'),
       to: 'helper',
     },
+    {
+      from: path.join(__dirname, 'resources/tray.png'),
+      to: 'tray.png',
+    },
   ],
 };
 // [/AI-GEN]

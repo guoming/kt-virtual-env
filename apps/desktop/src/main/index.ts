@@ -21,42 +21,32 @@ import {
   toggleStainBrowserDevTools,
 } from './stain-browser.js';
 import { checkEnvironment } from './environment-check.js';
-import {
-  checkConnectHealth,
-  checkSessionHealth,
-  checkSessionsHealth,
-} from './health-check.js';
+import { HealthMonitor } from './health-monitor.js';
 import {
   discoverLocalDevPorts,
   pickMeshLocalPort,
   validateMeshLocalPort,
 } from './local-dev-ports.js';
 import { pickAvailableLocalPort } from './port-picker.js';
-import fs from 'node:fs';
+import { loadBundledVersions } from './bundled-versions.js';
+import { RestartSpecRegistry } from './restart-spec-registry.js';
+import { SessionRecovery } from './session-recovery.js';
+import { createAppTray, destroyAppTray } from './tray.js';
+import { resolveAppIconPath } from './app-icon.js';
+import { getAppUpdater, initAppUpdater } from './app-updater.js';
+import { INITIAL_UPDATE_STATUS, type AppUpdateStatus } from '@kt-virtual-env/shared';
 
-const versions = (() => {
-  const candidates = [
-    path.join(app.getAppPath(), '../../resources/versions.json'),
-    path.join(process.cwd(), '../../resources/versions.json'),
-    path.join(process.cwd(), 'resources/versions.json'),
-  ];
-  for (const file of candidates) {
-    if (fs.existsSync(file)) {
-      return JSON.parse(fs.readFileSync(file, 'utf8')) as {
-        ktctl: { version: string };
-        kubectl: { version: string };
-      };
-    }
-  }
-  return { ktctl: { version: '0.3.7' }, kubectl: { version: '1.28.15' } };
-})();
+const versions = loadBundledVersions();
 
 let mainWindow: BrowserWindow | null = null;
 const sessions = new SessionManager();
-const ktctlService = new KtctlService(sessions);
+const restartRegistry = new RestartSpecRegistry();
+const ktctlService = new KtctlService(sessions, restartRegistry);
 let meshProfileCache: MeshProfile[] = [];
 let connectSessionId: string | null = null;
 let helperClient: HelperClient | null = null;
+let healthMonitor: HealthMonitor | null = null;
+let isQuitting = false;
 
 function k8s(): K8sService {
   const cfg = loadConfig();
@@ -67,12 +57,141 @@ function broadcastSessions(): void {
   mainWindow?.webContents.send('sessions:update', sessions.list());
 }
 
+function broadcastHealth(): void {
+  if (!healthMonitor) return;
+  mainWindow?.webContents.send('health:changed', healthMonitor.getSnapshot());
+}
+
+function broadcastUpdate(status: AppUpdateStatus): void {
+  mainWindow?.webContents.send('update:changed', status);
+}
+
 sessions.onChange(() => broadcastSessions());
 
+async function disconnectConnectHelper(): Promise<void> {
+  if (helperClient) {
+    helperClient.send({ cmd: 'disconnect' });
+    helperClient.close();
+    helperClient = null;
+  }
+}
+
+function bindConnectHelperMessages(sessionId: string): void {
+  helperClient?.onMessage((msg) => {
+    if (msg.event === 'log') {
+      sessions.appendLog(sessionId, msg.line);
+    }
+    if (msg.event === 'status') {
+      if (msg.state === 'starting') sessions.markStarting(sessionId);
+      if (msg.state === 'running') {
+        sessions.markRunning(sessionId, 0);
+        sessions.appendLog(sessionId, '[connect] 集群网络已打通');
+      }
+      if (msg.state === 'failed') {
+        sessions.markFailed(sessionId);
+        sessions.appendLog(sessionId, '[connect] 连接失败，请查看上方 ktctl 输出');
+      }
+      if (msg.state === 'stopped') {
+        if (connectSessionId === sessionId) {
+          sessions.remove(sessionId);
+          connectSessionId = null;
+          restartRegistry.clearConnect();
+        }
+      }
+    }
+    if (msg.event === 'error') {
+      sessions.appendLog(sessionId, `[connect] 错误：${msg.message}`);
+    }
+  });
+}
+
+async function launchConnectHelper(sessionId: string, params: ConnectParams): Promise<void> {
+  if (!(await isHelperRunning())) {
+    await launchHelperElevated();
+  }
+  helperClient = new HelperClient();
+  await helperClient.connect();
+  const ktctlPath = stageKtctlForElevated(getBundledBinary('ktctl'));
+  const elevatedParams: ConnectParams = {
+    ...params,
+    kubeconfig: stageKubeconfigForElevated(params.kubeconfig),
+  };
+  bindConnectHelperMessages(sessionId);
+  helperClient.send(buildConnectMessage(ktctlPath, elevatedParams, getElevatedKtHome()));
+}
+
+async function stopConnectSession(): Promise<void> {
+  await disconnectConnectHelper();
+  if (connectSessionId) {
+    sessions.remove(connectSessionId);
+    connectSessionId = null;
+  }
+  restartRegistry.clearConnect();
+}
+
+async function startConnectSession(params: ConnectParams): Promise<string> {
+  const session = sessions.create({
+    type: 'connect',
+    target: params.namespace,
+    namespace: params.namespace,
+    command: `ktctl connect --namespace ${params.namespace}`,
+  });
+  connectSessionId = session.id;
+  restartRegistry.setConnect(params);
+  await saveConfig({ connectDnsNamespaces: params.dnsNamespaces });
+  sessions.markStarting(session.id);
+  sessions.appendLog(
+    session.id,
+    `[connect] 正在连接集群网络（${params.namespace}）…`,
+  );
+  await launchConnectHelper(session.id, params);
+  return session.id;
+}
+
+async function restartConnectSession(params: ConnectParams): Promise<void> {
+  const existingId = connectSessionId;
+  if (existingId && sessions.get(existingId)) {
+    sessions.appendLog(
+      existingId,
+      '[auto-recovery] 健康检查连续 2 次异常，正在自动重连…',
+    );
+    sessions.markStarting(existingId);
+    await disconnectConnectHelper();
+    await launchConnectHelper(existingId, params);
+    return;
+  }
+  await startConnectSession(params);
+}
+
+function initHealthMonitor(): void {
+  const recovery = new SessionRecovery({
+    registry: restartRegistry,
+    sessions,
+    ktctl: ktctlService,
+    recoverConnect: restartConnectSession,
+    appendLog: (id, line) => sessions.appendLog(id, line),
+  });
+
+  healthMonitor = new HealthMonitor({
+    intervalMs: 10_000,
+    getConnectSession: () =>
+      connectSessionId ? sessions.get(connectSessionId) : undefined,
+    isHelperRunning,
+    k8s,
+    listActiveSessions: () => sessions.list().filter((s) => s.state !== 'stopped'),
+    ktctl: ktctlService,
+    recovery,
+    onChanged: () => broadcastHealth(),
+  });
+  healthMonitor.start();
+}
+
 function createWindow(): void {
+  const iconPath = resolveAppIconPath();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -94,6 +213,29 @@ function createWindow(): void {
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error('页面加载失败:', code, desc, url);
   });
+  mainWindow.on('close', (e) => {
+    if (isQuitting) return;
+    e.preventDefault();
+    mainWindow?.hide();
+  });
+}
+
+function focusMainWindow(): void {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+}
+
+function requestQuit(): void {
+  const running = sessions.list().filter((s) => s.state === 'running');
+  if (running.length > 0) {
+    focusMainWindow();
+    mainWindow?.webContents.send('app:confirmExit', running.length);
+    return;
+  }
+  isQuitting = true;
+  app.quit();
 }
 
 function registerIpc(): void {
@@ -114,6 +256,24 @@ function registerIpc(): void {
   }));
   ipcMain.handle('app:checkEnvironment', () => checkEnvironment());
 
+  ipcMain.handle('update:getStatus', () =>
+    getAppUpdater()?.getStatus() ?? INITIAL_UPDATE_STATUS(app.getVersion()),
+  );
+  ipcMain.handle('update:check', async () => {
+    const updater = getAppUpdater();
+    if (!updater) return INITIAL_UPDATE_STATUS(app.getVersion());
+    return updater.checkForUpdates();
+  });
+  ipcMain.handle('update:install', () => {
+    const running = sessions.list().filter((s) => s.state === 'running');
+    if (running.length > 0) {
+      return { ok: false as const, reason: 'sessions' as const, count: running.length };
+    }
+    isQuitting = true;
+    getAppUpdater()?.installUpdate();
+    return { ok: true as const };
+  });
+
   ipcMain.handle('k8s:testConnection', () => k8s().testConnection());
   ipcMain.handle('k8s:listProfiles', async () => {
     meshProfileCache = await k8s().listMeshProfiles();
@@ -131,16 +291,49 @@ function registerIpc(): void {
   );
   ipcMain.handle('k8s:listContexts', () => k8s().listContexts());
 
-  ipcMain.handle('health:checkConnect', async () => {
-    const session = connectSessionId ? sessions.get(connectSessionId) : undefined;
-    return checkConnectHealth(session, await isHelperRunning(), k8s());
+  ipcMain.handle('health:getSnapshot', () => healthMonitor?.getSnapshot() ?? { connect: null, sessions: {} });
+  ipcMain.handle('health:forceCheck', async () => {
+    if (!healthMonitor) return { connect: null, sessions: {} };
+    const snapshot = await healthMonitor.forceCheck();
+    broadcastHealth();
+    return snapshot;
   });
-  ipcMain.handle('health:checkSession', async (_e, id: string) =>
-    checkSessionHealth(sessions.get(id), ktctlService),
-  );
+  ipcMain.handle('health:checkConnect', async () => {
+    const snapshot = healthMonitor
+      ? await healthMonitor.forceCheck()
+      : { connect: null, sessions: {} };
+    return snapshot.connect ?? {
+      level: 'unknown',
+      ok: false,
+      message: '尚未检测',
+      details: [],
+      checkedAt: new Date().toISOString(),
+    };
+  });
+  ipcMain.handle('health:checkSession', async (_e, id: string) => {
+    const snapshot = healthMonitor
+      ? await healthMonitor.forceCheck()
+      : { connect: null, sessions: {} };
+    return (
+      snapshot.sessions[id] ?? {
+        level: 'unknown',
+        ok: false,
+        message: '尚未检测',
+        details: [],
+        checkedAt: new Date().toISOString(),
+      }
+    );
+  });
   ipcMain.handle('health:checkSessionsByType', async (_e, type: SessionType) => {
+    const snapshot = healthMonitor
+      ? await healthMonitor.forceCheck()
+      : { connect: null, sessions: {} };
     const list = sessions.list().filter((s) => s.type === type && s.state !== 'stopped');
-    return checkSessionsHealth(list, ktctlService);
+    const out: Record<string, import('@kt-virtual-env/shared').HealthCheckResult> = {};
+    for (const s of list) {
+      if (snapshot.sessions[s.id]) out[s.id] = snapshot.sessions[s.id]!;
+    }
+    return out;
   });
 
   ipcMain.handle(
@@ -174,51 +367,10 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle('connect:start', async (_e, params: ConnectParams) => {
-    if (!(await isHelperRunning())) {
-      await launchHelperElevated();
-    }
-    helperClient = new HelperClient();
-    await helperClient.connect();
-    const ktctlPath = stageKtctlForElevated(getBundledBinary('ktctl'));
-    const elevatedParams: ConnectParams = {
-      ...params,
-      kubeconfig: stageKubeconfigForElevated(params.kubeconfig),
-    };
-    const session = sessions.create({
-      type: 'connect',
-      target: params.namespace,
-      namespace: params.namespace,
-      command: `ktctl connect --namespace ${params.namespace}`,
-    });
-    connectSessionId = session.id;
-    await saveConfig({ connectDnsNamespaces: params.dnsNamespaces });
-    sessions.markStarting(session.id);
-    helperClient.onMessage((msg) => {
-      if (msg.event === 'log') sessions.appendLog(session.id, msg.line);
-      if (msg.event === 'status') {
-        if (msg.state === 'running') sessions.markRunning(session.id, 0);
-        if (msg.state === 'failed') sessions.markFailed(session.id);
-        if (msg.state === 'stopped') {
-          sessions.remove(session.id);
-          if (connectSessionId === session.id) connectSessionId = null;
-        }
-      }
-    });
-    helperClient.send(buildConnectMessage(ktctlPath, elevatedParams, getElevatedKtHome()));
-    return session.id;
-  });
+  ipcMain.handle('connect:start', async (_e, params: ConnectParams) => startConnectSession(params));
 
   ipcMain.handle('connect:stop', async () => {
-    if (helperClient) {
-      helperClient.send({ cmd: 'disconnect' });
-      helperClient.close();
-      helperClient = null;
-    }
-    if (connectSessionId) {
-      sessions.remove(connectSessionId);
-      connectSessionId = null;
-    }
+    await stopConnectSession();
   });
 
   ipcMain.handle('helper:status', async () => ({ running: await isHelperRunning() }));
@@ -231,23 +383,15 @@ function registerIpc(): void {
   ipcMain.handle('sessions:stop', async (_e, id: string) => {
     const s = sessions.get(id);
     if (s?.type === 'connect') {
-      helperClient?.send({ cmd: 'disconnect' });
-      helperClient?.close();
-      helperClient = null;
-      sessions.remove(id);
-      connectSessionId = null;
+      await stopConnectSession();
       return;
     }
+    restartRegistry.delete(id);
     await ktctlService.stopSession(id);
   });
   ipcMain.handle('sessions:stopAll', async () => {
     await ktctlService.stopAll();
-    if (connectSessionId) {
-      helperClient?.send({ cmd: 'disconnect' });
-      helperClient?.close();
-      sessions.remove(connectSessionId);
-      connectSessionId = null;
-    }
+    await stopConnectSession();
   });
 
   ipcMain.handle('ktctl:recover', (_e, target: string, ns: string) => ktctlService.recover(target, ns));
@@ -286,37 +430,63 @@ function registerIpc(): void {
   });
 }
 
-app.whenReady().then(() => {
-  void ensureUserKtReady().catch((err: unknown) => {
-    console.warn('~/.kt 权限修复失败，端口转发可能不可用:', err);
-  });
-  void ensureConfigReady().catch((err: unknown) => {
-    console.warn('~/.kt-virtual-env 权限修复失败，配置保存可能不可用:', err);
-  });
-  registerIpc();
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    focusMainWindow();
+  });
 
-app.on('before-quit', (e) => {
-  const running = sessions.list().filter((s) => s.state === 'running');
-  if (running.length > 0) {
-    e.preventDefault();
-    mainWindow?.webContents.send('app:confirmExit', running.length);
-  }
-});
+  app.whenReady().then(() => {
+    void ensureUserKtReady().catch((err: unknown) => {
+      console.warn('~/.kt 权限修复失败，端口转发可能不可用:', err);
+    });
+    void ensureConfigReady().catch((err: unknown) => {
+      console.warn('~/.kt-virtual-env 权限修复失败，配置保存可能不可用:', err);
+    });
+    registerIpc();
+    initHealthMonitor();
+    createWindow();
+    initAppUpdater(broadcastUpdate);
+    createAppTray({
+      onShow: focusMainWindow,
+      onQuit: requestQuit,
+    });
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else focusMainWindow();
+    });
+  });
 
-ipcMain.handle('app:forceQuit', async (_e, action: 'stopAll' | 'cancel') => {
-  if (action === 'stopAll') {
-    await ktctlService.clean();
-    await ktctlService.stopAll();
-    helperClient?.send({ cmd: 'shutdown' });
-    app.exit(0);
-  }
-});
+  app.on('window-all-closed', () => {
+    // 关闭窗口后保留托盘，Connect/Mesh/Forward 会话继续在后台运行
+  });
+
+  app.on('before-quit', (e) => {
+    if (isQuitting) return;
+    const running = sessions.list().filter((s) => s.state === 'running');
+    if (running.length > 0) {
+      e.preventDefault();
+      focusMainWindow();
+      mainWindow?.webContents.send('app:confirmExit', running.length);
+    }
+  });
+
+  app.on('will-quit', () => {
+    healthMonitor?.stop();
+    getAppUpdater()?.stop();
+    destroyAppTray();
+  });
+
+  ipcMain.handle('app:forceQuit', async (_e, action: 'stopAll' | 'cancel') => {
+    if (action === 'stopAll') {
+      isQuitting = true;
+      await ktctlService.clean();
+      await ktctlService.stopAll();
+      helperClient?.send({ cmd: 'shutdown' });
+      app.exit(0);
+    }
+  });
+}

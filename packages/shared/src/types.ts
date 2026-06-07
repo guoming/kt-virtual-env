@@ -43,6 +43,9 @@ export interface ComponentCheck {
 
 export interface EnvironmentStatus {
   appVersion: string;
+  appLatestVersion?: string;
+  bundledKtctlVersion: string;
+  bundledKubectlVersion: string;
   helper: ComponentCheck & { running: boolean };
   ktctl: ComponentCheck;
   kubectl: ComponentCheck;

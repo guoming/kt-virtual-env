@@ -76,6 +76,9 @@ jobs:
           name: macos-installers
           path: |
             dist/packages/*.dmg
+            dist/packages/*.zip
+            dist/packages/*.yml
+            dist/packages/*.blockmap
             !dist/packages/*-unpacked/**
           if-no-files-found: error
 
@@ -130,6 +133,8 @@ jobs:
           name: windows-installers
           path: |
             dist/packages/*.exe
+            dist/packages/*.yml
+            dist/packages/*.blockmap
             !dist/packages/*-unpacked/**
           if-no-files-found: error
 
@@ -166,9 +171,9 @@ jobs:
       - name: Generate checksums
         run: |
           mkdir -p dist/release/assets
-          find dist/release/macos dist/release/windows -type f \( -name '*.dmg' -o -name '*.exe' \) -exec cp {} dist/release/assets/ \;
+          find dist/release/macos dist/release/windows -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.zip' -o -name '*.yml' -o -name '*.blockmap' \) -exec cp {} dist/release/assets/ \;
           cd dist/release/assets
-          shasum -a 256 * > SHA256SUMS.txt
+          shasum -a 256 *.dmg *.exe *.zip 2>/dev/null > SHA256SUMS.txt || true
           cat SHA256SUMS.txt
 
       - name: Create GitHub Release
