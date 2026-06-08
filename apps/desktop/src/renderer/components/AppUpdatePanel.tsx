@@ -3,7 +3,8 @@ import type { AppUpdateStatus } from '@kt-virtual-env/shared';
 import { APP_REPO_URL } from '../lib/branding';
 import { requireKtveApi } from '../lib/api';
 import { VersionCompareLine } from './VersionCompareLine';
-import { formatUpdateErrorMessage, mapUpdatePhase } from '../lib/version-compare-utils';
+import { formatUpdateErrorMessage } from '@kt-virtual-env/shared';
+import { mapUpdatePhase } from '../lib/version-compare-utils';
 
 export function AppUpdatePanel() {
   const [status, setStatus] = useState<AppUpdateStatus | null>(null);
@@ -23,7 +24,7 @@ export function AppUpdatePanel() {
     try {
       setStatus(await requireKtveApi().update.check());
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(formatUpdateErrorMessage(e instanceof Error ? e.message : String(e)));
     } finally {
       setChecking(false);
     }
@@ -79,12 +80,34 @@ export function AppUpdatePanel() {
         />
       </div>
 
-      {status.message && (
-        <p className="mt-2 text-xs text-gray-600">
-          {status.phase === 'error'
-            ? formatUpdateErrorMessage(status.message)
-            : status.message}
-        </p>
+      {status.phase === 'error' && (
+        <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p>{formatUpdateErrorMessage(status.message)}</p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="text-blue-700 hover:underline disabled:opacity-50"
+              disabled={checking}
+              onClick={() => void check()}
+            >
+              重试检查
+            </button>
+            <button
+              type="button"
+              className="text-blue-700 hover:underline"
+              onClick={(e) => {
+                e.preventDefault();
+                void requireKtveApi().shell.openExternal(`${APP_REPO_URL}/releases`);
+              }}
+            >
+              前往 GitHub 下载
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status.message && status.phase !== 'error' && (
+        <p className="mt-2 text-xs text-gray-600">{status.message}</p>
       )}
 
       {showProgress && (

@@ -2,6 +2,7 @@ import { app } from 'electron';
 import updater from 'electron-updater';
 import {
   INITIAL_UPDATE_STATUS,
+  formatUpdateErrorMessage,
   type AppUpdateStatus,
 } from '@kt-virtual-env/shared';
 
@@ -88,7 +89,7 @@ export class AppUpdater {
         phase: 'error',
         currentVersion: app.getVersion(),
         latestVersion: this.status.latestVersion,
-        message: error.message,
+        message: formatUpdateErrorMessage(error.message),
       });
     });
 
@@ -110,11 +111,12 @@ export class AppUpdater {
     try {
       await autoUpdater.checkForUpdates();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        error instanceof Error ? error.message : String(error);
       this.setStatus({
         phase: 'error',
         currentVersion: app.getVersion(),
-        message,
+        message: formatUpdateErrorMessage(message),
       });
     }
     return this.status;
