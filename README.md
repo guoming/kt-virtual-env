@@ -101,9 +101,9 @@ pnpm --filter @kt-virtual-env/desktop pack:win   # Windows 安装包
 
 | 平台 | 文件名示例 |
 |------|------------|
-| macOS (Apple Silicon) | `kt-virtual-env-0.1.0-mac-arm64.dmg` |
-| macOS (Intel) | `kt-virtual-env-0.1.0-mac-x64.dmg` |
-| Windows | `kt-virtual-env-0.1.0-win-x64.exe` |
+| macOS (Apple Silicon) | `kt-virtual-env-0.1.5-mac-arm64.dmg` |
+| macOS (Intel) | `kt-virtual-env-0.1.5-mac-x64.dmg` |
+| Windows | `kt-virtual-env-0.1.5-win-x64.exe` |
 
 应用内显示名称仍为「Kubernetes 虚拟环境工作台」；磁盘上的 `.app` / 可执行文件名为 `kt-virtual-env`。
 
@@ -112,8 +112,8 @@ pnpm --filter @kt-virtual-env/desktop pack:win   # Windows 安装包
 推送版本 tag 后，GitHub Actions 会自动构建并发布安装包：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 工作流：`.github/workflows/release.yml`

@@ -13,7 +13,7 @@ import (
 	"git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper/ipc"
 )
 
-const helperVersion = "0.1.0"
+const helperVersion = "0.1.5"
 
 func main() {
 	socketPath := os.Getenv("KTVE_HELPER_SOCKET")

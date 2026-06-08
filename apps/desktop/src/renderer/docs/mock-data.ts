@@ -83,8 +83,8 @@ export const MOCK_CONFIG = {
 };
 
 export const MOCK_ENVIRONMENT: EnvironmentStatus = {
-  appVersion: '0.1.0',
-  appLatestVersion: '0.1.0',
+  appVersion: '0.1.5',
+  appLatestVersion: '0.1.5',
   bundledKtctlVersion: '0.3.7',
   bundledKubectlVersion: '1.28.15',
   helper: {

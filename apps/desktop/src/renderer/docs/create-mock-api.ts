@@ -49,8 +49,8 @@ function filterServices(query: string, ns?: string) {
 
 const MOCK_UPDATE_STATUS: AppUpdateStatus = {
   phase: 'unsupported',
-  currentVersion: '0.1.0',
-  latestVersion: '0.1.0',
+  currentVersion: '0.1.5',
+  latestVersion: '0.1.5',
   message: '文档预览模式',
 };
 
@@ -68,7 +68,7 @@ export function createMockApi(): KtveApi {
       pickKubeconfig: async () => MOCK_CONFIG.kubeconfig,
     },
     app: {
-      versions: async () => ({ app: '0.1.0', ktctl: '0.3.7', kubectl: 'v1.28.15' }),
+      versions: async () => ({ app: '0.1.5', ktctl: '0.3.7', kubectl: 'v1.28.15' }),
       checkEnvironment: async () => MOCK_ENVIRONMENT,
       onConfirmExit: () => noopUnsub(),
       forceQuit: async () => {},
