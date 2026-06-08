@@ -14,6 +14,7 @@ import { NavMenu } from './components/NavMenu';
 import type { AppUpdateStatus } from '@kt-virtual-env/shared';
 import { APP_NAME, APP_REPO_URL, APP_SLOGAN } from './lib/branding';
 import { VersionCompareLine } from './components/VersionCompareLine';
+import { mapUpdatePhase } from './lib/version-compare-utils';
 import { isPanelSession } from './lib/session-utils';
 
 function MainContent({ page }: { page: PageId }) {
@@ -31,8 +32,7 @@ export default function App() {
   const { page, setPage, sessions, setSessions } = useAppStore();
   const [selectedId, setSelectedId] = useState<string>();
   const [exitCount, setExitCount] = useState<number | null>(null);
-  const [appVersion, setAppVersion] = useState<string>();
-  const [appLatestVersion, setAppLatestVersion] = useState<string>();
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>();
 
   useEffect(() => {
     if (!api) return;
@@ -47,10 +47,7 @@ export default function App() {
 
   useEffect(() => {
     if (!api) return;
-    const apply = (status: AppUpdateStatus) => {
-      setAppVersion(status.currentVersion);
-      if (status.latestVersion) setAppLatestVersion(status.latestVersion);
-    };
+    const apply = (status: AppUpdateStatus) => setUpdateStatus(status);
     void api.update.getStatus().then(apply);
     return api.update.onChanged(apply);
   }, [api]);
@@ -80,21 +77,18 @@ export default function App() {
           <div className="font-semibold leading-tight">{APP_NAME}</div>
           <div className="text-xs text-gray-500">{APP_SLOGAN}</div>
         </div>
-        <div className="flex flex-col items-end gap-0.5">
-          {appVersion && (
-            <VersionCompareLine current={appVersion} latest={appLatestVersion} />
+        <div className="flex flex-col items-end">
+          {updateStatus && (
+            <VersionCompareLine
+              current={updateStatus.currentVersion}
+              latest={updateStatus.latestVersion}
+              mode="remote"
+              state={mapUpdatePhase(updateStatus.phase)}
+              repoLabel="发布页"
+              onOpenRepo={() => void api.shell.openExternal(APP_REPO_URL)}
+              onRetry={() => void api.update.check()}
+            />
           )}
-          <a
-            href={APP_REPO_URL}
-            className="text-sm text-blue-600 hover:underline"
-            title={APP_REPO_URL}
-            onClick={(e) => {
-              e.preventDefault();
-              void api.shell.openExternal(APP_REPO_URL);
-            }}
-          >
-            GitHub
-          </a>
         </div>
       </header>
       <div className="flex flex-1 overflow-hidden">

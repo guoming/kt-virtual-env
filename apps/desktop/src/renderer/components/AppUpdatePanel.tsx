@@ -3,6 +3,7 @@ import type { AppUpdateStatus } from '@kt-virtual-env/shared';
 import { APP_REPO_URL } from '../lib/branding';
 import { requireKtveApi } from '../lib/api';
 import { VersionCompareLine } from './VersionCompareLine';
+import { formatUpdateErrorMessage, mapUpdatePhase } from '../lib/version-compare-utils';
 
 export function AppUpdatePanel() {
   const [status, setStatus] = useState<AppUpdateStatus | null>(null);
@@ -72,11 +73,18 @@ export function AppUpdatePanel() {
         <VersionCompareLine
           current={status.currentVersion}
           latest={status.latestVersion}
+          mode="remote"
+          state={mapUpdatePhase(status.phase)}
+          onRetry={() => void check()}
         />
       </div>
 
       {status.message && (
-        <p className="mt-2 text-xs text-gray-600">{status.message}</p>
+        <p className="mt-2 text-xs text-gray-600">
+          {status.phase === 'error'
+            ? formatUpdateErrorMessage(status.message)
+            : status.message}
+        </p>
       )}
 
       {showProgress && (
