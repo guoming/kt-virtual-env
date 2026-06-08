@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { getHelperSocketPath } from './helper-socket.js';
 import { getHelperPath } from './binary-resolver.js';
 import { HelperClient } from './helper-client.js';
+import { resolvePowershellPath } from './powershell-path.js';
 
 export async function isHelperRunning(): Promise<boolean> {
   try {
@@ -18,6 +19,17 @@ export async function isHelperRunning(): Promise<boolean> {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function spawnDetached(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
 }
 
 export async function launchHelperElevated(): Promise<void> {
@@ -37,16 +49,14 @@ export async function launchHelperElevated(): Promise<void> {
     // 须后台运行 (&)，且 socket 路径通过环境变量传入（root 下 ~ 不是当前用户目录）
     const cmd = `export KTVE_HELPER_SOCKET=${shellQuote(socketPath)}; ${shellQuote(helper)} </dev/null >/tmp/kt-virtual-env-helper.log 2>&1 &`;
     const script = `do shell script "${cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" with administrator privileges`;
-    spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' }).unref();
+    await spawnDetached('osascript', ['-e', script]);
   } else if (process.platform === 'win32') {
-    spawn(
-      'powershell',
-      [
-        '-Command',
-        `Start-Process -FilePath '${helper.replace(/'/g, "''")}' -Verb RunAs -ArgumentList '' -Environment @{KTVE_HELPER_SOCKET='${socketPath}'}`,
-      ],
-      { detached: true, stdio: 'ignore' },
-    ).unref();
+    const powershell = resolvePowershellPath();
+    await spawnDetached(powershell, [
+      '-NoProfile',
+      '-Command',
+      `Start-Process -FilePath '${helper.replace(/'/g, "''")}' -Verb RunAs -ArgumentList '' -Environment @{KTVE_HELPER_SOCKET='${socketPath.replace(/'/g, "''")}'}`,
+    ]);
   } else {
     throw new Error('不支持的平台');
   }

@@ -7,6 +7,7 @@ import {
   suggestMeshPortFromDiscovery,
 } from '@kt-virtual-env/shared';
 import { isLocalPortOpen } from './process-utils.js';
+import { resolvePowershellPath } from './powershell-path.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -75,11 +76,15 @@ export function parseLsofListenLine(line: string): LocalDevPort | null {
   };
 }
 
+function getPowershellExecutable(): string {
+  return resolvePowershellPath();
+}
+
 async function resolveCommandLine(pid: number): Promise<string | undefined> {
   try {
     if (process.platform === 'win32') {
       const script = `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`;
-      const { stdout } = await execFileAsync('powershell', ['-NoProfile', '-Command', script], {
+      const { stdout } = await execFileAsync(getPowershellExecutable(), ['-NoProfile', '-Command', script], {
         maxBuffer: 1024 * 1024,
       });
       const line = stdout.trim();
@@ -136,7 +141,7 @@ async function discoverWindows(): Promise<LocalDevPort[]> {
     '}',
   ].join(' ');
   const { stdout } = await execFileAsync(
-    'powershell',
+    getPowershellExecutable(),
     ['-NoProfile', '-Command', script],
     { maxBuffer: 4 * 1024 * 1024 },
   );
