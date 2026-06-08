@@ -5,7 +5,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="$ROOT/resources/bin"
 KTCTL_VERSION="0.3.7"
 KUBECTL_VERSION="1.28.15"
-CURL_OPTS=(--connect-timeout 15 --max-time 300)
+CURL_OPTS=(
+  --connect-timeout 15
+  --max-time 300
+  --retry 6
+  --retry-delay 5
+  --retry-max-time 900
+  --retry-all-errors
+)
+
+curl_download() {
+  local url="$1"
+  local dest="$2"
+  curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$dest"
+}
 
 should_verify_binary() {
   local platform_key="$1"
@@ -68,7 +81,7 @@ download_ktctl() {
   tmp="$(mktemp -d)"
   local ok=0
   if [[ "$platform_key" == windows-amd64 ]]; then
-    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$tmp/ktctl.zip"; then
+    if curl_download "$url" "$tmp/ktctl.zip"; then
       unzip -q "$tmp/ktctl.zip" -d "$tmp"
       install -m 755 "$tmp/ktctl.exe" "$dest/ktctl.exe"
       ok=1
@@ -76,7 +89,7 @@ download_ktctl() {
       ok=1
     fi
   else
-    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$tmp/ktctl.tar.gz"; then
+    if curl_download "$url" "$tmp/ktctl.tar.gz"; then
       tar xzf "$tmp/ktctl.tar.gz" -C "$tmp"
       install -m 755 "$tmp/ktctl" "$dest/ktctl"
       ok=1
@@ -118,13 +131,13 @@ download_kubectl() {
   local url="https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/${os}/${arch}/${artifact}"
   local ok=0
   if [[ "$platform_key" == windows-amd64 ]]; then
-    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$dest/kubectl.exe"; then
+    if curl_download "$url" "$dest/kubectl.exe"; then
       ok=1
     elif copy_from_path kubectl.exe "$dest/kubectl.exe"; then
       ok=1
     fi
   else
-    if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$dest/kubectl"; then
+    if curl_download "$url" "$dest/kubectl"; then
       chmod +x "$dest/kubectl"
       ok=1
     elif copy_from_path kubectl "$dest/kubectl"; then

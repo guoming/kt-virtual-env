@@ -54,7 +54,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download ktctl / kubectl
-        run: pnpm fetch-binaries darwin-arm64 darwin-amd64
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 3
+          retry_wait_seconds: 15
+          timeout_minutes: 15
+          command: pnpm fetch-binaries darwin-arm64 darwin-amd64
 
       - name: Build privileged helper
         env:
@@ -114,7 +119,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download ktctl / kubectl
-        run: pnpm fetch-binaries windows-amd64
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 3
+          retry_wait_seconds: 15
+          timeout_minutes: 15
+          command: pnpm fetch-binaries windows-amd64
 
       - name: Verify bundled Windows binaries
         run: |
