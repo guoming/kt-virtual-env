@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { getHelperSocketPath } from './helper-socket.js';
+import os from 'node:os';
+import path from 'node:path';
+import { getHelperSocketPath, isTcpHelperEndpoint } from './helper-socket.js';
 import { getHelperPath } from './binary-resolver.js';
 import { HelperClient } from './helper-client.js';
 import { resolvePowershellPath } from './powershell-path.js';
@@ -21,11 +23,11 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Windows PowerShell 5.1 不支持 Start-Process -Environment，通过 CLI 传 socket */
+/** Windows PowerShell 5.1 不支持 Start-Process -Environment；RunAs 下多参数 ArgumentList 常被吞掉 */
 export function buildWindowsElevatedLaunchCommand(helper: string, socketPath: string): string {
   const escapedHelper = helper.replace(/'/g, "''");
   const escapedSocket = socketPath.replace(/'/g, "''");
-  return `Start-Process -FilePath '${escapedHelper}' -Verb RunAs -ArgumentList '-socket','${escapedSocket}'`;
+  return `$p='${escapedHelper}'; $a='-socket ${escapedSocket}'; Start-Process -FilePath $p -Verb RunAs -WindowStyle Hidden -ArgumentList $a`;
 }
 
 function spawnDetached(command: string, args: string[]): Promise<void> {
@@ -46,10 +48,12 @@ export async function launchHelperElevated(): Promise<void> {
   }
 
   const socketPath = getHelperSocketPath();
-  try {
-    fs.unlinkSync(socketPath);
-  } catch {
-    // ignore missing socket
+  if (!isTcpHelperEndpoint(socketPath)) {
+    try {
+      fs.unlinkSync(socketPath);
+    } catch {
+      // ignore missing socket
+    }
   }
 
   if (process.platform === 'darwin') {
@@ -82,6 +86,6 @@ async function waitForHelper(timeoutMs: number): Promise<void> {
   const logHint =
     process.platform === 'darwin'
       ? '日志: /tmp/kt-virtual-env-helper.log'
-      : '若未出现 UAC 弹窗，请确认已安装 Windows PowerShell 并以管理员身份重试';
+      : `日志: ${path.join(os.tmpdir(), 'kt-virtual-env-helper.log')}；若未出现 UAC 弹窗，请检查是否被其他窗口遮挡`;
   throw new Error(`Helper 启动超时，请检查管理员授权。${logHint}，socket: ${getHelperSocketPath()}`);
 }

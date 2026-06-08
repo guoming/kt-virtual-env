@@ -14,7 +14,7 @@ import (
 	"git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper/ipc"
 )
 
-const helperVersion = "0.1.7"
+const helperVersion = "0.1.8"
 
 func main() {
 	socketFlag := flag.String("socket", "", "IPC socket path")
@@ -28,7 +28,14 @@ func main() {
 		// 回退：当前进程 uid（提权后为 0，仅开发直连时使用）
 		socketPath = filepath.Join(os.TempDir(), fmt.Sprintf("kt-virtual-env-helper-%d.sock", os.Getuid()))
 	}
-	_ = os.Remove(socketPath)
+	if !strings.HasPrefix(socketPath, "tcp:") {
+		_ = os.Remove(socketPath)
+	}
+	logFile, logErr := openHelperLog()
+	if logErr == nil {
+		defer logFile.Close()
+		fmt.Fprintln(logFile, "kt-virtual-env-helper", helperVersion, "listening on", socketPath)
+	}
 
 	fmt.Println("kt-virtual-env-helper", helperVersion, "listening on", socketPath)
 
@@ -37,15 +44,25 @@ func main() {
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 		<-sig
 		_ = ipc.HandleDisconnect()
-		_ = os.Remove(socketPath)
+		if !strings.HasPrefix(socketPath, "tcp:") {
+			_ = os.Remove(socketPath)
+		}
 		os.Exit(0)
 	}()
 
 	err := ipc.Serve(socketPath, dispatch)
 	if err != nil {
+		if logErr == nil {
+			fmt.Fprintln(logFile, "serve error:", err)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func openHelperLog() (*os.File, error) {
+	logPath := filepath.Join(os.TempDir(), "kt-virtual-env-helper.log")
+	return os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 }
 
 func dispatch(conn net.Conn, msg map[string]any) error {

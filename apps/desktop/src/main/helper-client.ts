@@ -1,25 +1,12 @@
-import net from 'node:net';
 import type { ConnectParams, HelperInbound, HelperOutbound } from '@kt-virtual-env/shared';
-import { getHelperSocketPath } from './helper-socket.js';
-
-const SOCKET = getHelperSocketPath();
+import { connectHelperSocket, getHelperSocketPath } from './helper-socket.js';
 
 export class HelperClient {
-  private conn?: net.Socket;
+  private conn?: import('node:net').Socket;
   private buffer = '';
 
   async connect(timeoutMs = 5000): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Helper 连接超时')), timeoutMs);
-      this.conn = net.createConnection(SOCKET, () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      this.conn.on('error', (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-    });
+    this.conn = await connectHelperSocket(timeoutMs);
   }
 
   send(msg: HelperInbound): void {
@@ -45,7 +32,7 @@ export class HelperClient {
   }
 
   static socketPath(): string {
-    return SOCKET;
+    return getHelperSocketPath();
   }
 }
 
