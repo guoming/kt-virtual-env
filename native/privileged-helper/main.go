@@ -2,6 +2,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -13,10 +14,16 @@ import (
 	"git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper/ipc"
 )
 
-const helperVersion = "0.1.5"
+const helperVersion = "0.1.6"
 
 func main() {
-	socketPath := os.Getenv("KTVE_HELPER_SOCKET")
+	socketFlag := flag.String("socket", "", "IPC socket path")
+	flag.Parse()
+
+	socketPath := strings.TrimSpace(*socketFlag)
+	if socketPath == "" {
+		socketPath = os.Getenv("KTVE_HELPER_SOCKET")
+	}
 	if socketPath == "" {
 		// 回退：当前进程 uid（提权后为 0，仅开发直连时使用）
 		socketPath = filepath.Join(os.TempDir(), fmt.Sprintf("kt-virtual-env-helper-%d.sock", os.Getuid()))

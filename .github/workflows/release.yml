@@ -116,6 +116,11 @@ jobs:
       - name: Download ktctl / kubectl
         run: pnpm fetch-binaries windows-amd64
 
+      - name: Verify bundled Windows binaries
+        run: |
+          ./resources/bin/windows-amd64/ktctl.exe --version
+          ./resources/bin/windows-amd64/kubectl.exe version --client
+
       - name: Build privileged helper
         env:
           KTVE_HELPER_TARGETS: win

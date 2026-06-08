@@ -21,6 +21,13 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Windows PowerShell 5.1 不支持 Start-Process -Environment，通过 CLI 传 socket */
+export function buildWindowsElevatedLaunchCommand(helper: string, socketPath: string): string {
+  const escapedHelper = helper.replace(/'/g, "''");
+  const escapedSocket = socketPath.replace(/'/g, "''");
+  return `Start-Process -FilePath '${escapedHelper}' -Verb RunAs -ArgumentList '-socket','${escapedSocket}'`;
+}
+
 function spawnDetached(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { detached: true, stdio: 'ignore' });
@@ -54,8 +61,10 @@ export async function launchHelperElevated(): Promise<void> {
     const powershell = resolvePowershellPath();
     await spawnDetached(powershell, [
       '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
       '-Command',
-      `Start-Process -FilePath '${helper.replace(/'/g, "''")}' -Verb RunAs -ArgumentList '' -Environment @{KTVE_HELPER_SOCKET='${socketPath.replace(/'/g, "''")}'}`,
+      buildWindowsElevatedLaunchCommand(helper, socketPath),
     ]);
   } else {
     throw new Error('不支持的平台');
@@ -70,7 +79,9 @@ async function waitForHelper(timeoutMs: number): Promise<void> {
     if (await isHelperRunning()) return;
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(
-    `Helper 启动超时，请检查管理员授权。日志: /tmp/kt-virtual-env-helper.log，socket: ${getHelperSocketPath()}`,
-  );
+  const logHint =
+    process.platform === 'darwin'
+      ? '日志: /tmp/kt-virtual-env-helper.log'
+      : '若未出现 UAC 弹窗，请确认已安装 Windows PowerShell 并以管理员身份重试';
+  throw new Error(`Helper 启动超时，请检查管理员授权。${logHint}，socket: ${getHelperSocketPath()}`);
 }

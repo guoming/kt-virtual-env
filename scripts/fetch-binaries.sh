@@ -7,6 +7,27 @@ KTCTL_VERSION="0.3.7"
 KUBECTL_VERSION="1.28.15"
 CURL_OPTS=(--connect-timeout 15 --max-time 300)
 
+should_verify_binary() {
+  local platform_key="$1"
+  local host_os host_arch
+  host_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  host_arch="$(uname -m)"
+  case "$platform_key" in
+    darwin-arm64)
+      [[ "$host_os" == darwin* && "$host_arch" == arm64 ]]
+      ;;
+    darwin-amd64)
+      [[ "$host_os" == darwin* && "$host_arch" != arm64 ]]
+      ;;
+    windows-amd64)
+      [[ "$host_os" == msys* || "$host_os" == mingw* || "$host_os" == cygwin* ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 copy_from_path() {
   local name="$1"
   local dest="$2"
@@ -89,7 +110,12 @@ download_kubectl() {
       ;;
   esac
 
-  local url="https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/${os}/${arch}/kubectl"
+  # Windows 发行包须带 .exe 后缀，否则 dl.k8s.io 返回 404
+  local artifact="kubectl"
+  if [[ "$platform_key" == windows-amd64 ]]; then
+    artifact="kubectl.exe"
+  fi
+  local url="https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/${os}/${arch}/${artifact}"
   local ok=0
   if [[ "$platform_key" == windows-amd64 ]]; then
     if curl -fsSL "${CURL_OPTS[@]}" "$url" -o "$dest/kubectl.exe"; then
@@ -107,6 +133,16 @@ download_kubectl() {
   fi
   if [[ "$ok" -eq 0 ]]; then
     echo "failed to download kubectl: $url (且无本机 kubectl 可回退)" >&2
+    return 1
+  fi
+  local installed="$dest/$artifact"
+  if should_verify_binary "$platform_key"; then
+    if ! "$installed" version --client >/dev/null 2>&1; then
+      echo "kubectl 下载后无法执行: $installed" >&2
+      return 1
+    fi
+  elif [[ ! -s "$installed" ]]; then
+    echo "kubectl 下载结果为空: $installed" >&2
     return 1
   fi
   echo "✓ kubectl $platform_key"
