@@ -1,4 +1,4 @@
-import { buildMeshCommand } from '@kt-virtual-env/shared';
+import { buildMeshCommand, meshTargetName } from '@kt-virtual-env/shared';
 import { isProcessAlive, isLocalPortOpen } from './process-utils.js';
 import type { ForwardParams, MeshProfile } from '@kt-virtual-env/shared';
 import { getBundledBinary } from './binary-resolver.js';
@@ -32,7 +32,7 @@ export class KtctlService {
 
   startMesh(profile: MeshProfile, localPort: number, userId: string): string {
     const { args, display, meshVersion } = this.buildMeshArgs(profile, localPort, userId);
-    const sessionId = this.spawnKtctl('mesh', profile.deploymentName, profile.namespace, args, {
+    const sessionId = this.spawnKtctl('mesh', meshTargetName(profile), profile.namespace, args, {
       localPort,
       virtualEnv: meshVersion,
       commandOverride: display,

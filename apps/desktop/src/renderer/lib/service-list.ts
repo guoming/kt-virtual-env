@@ -8,6 +8,14 @@ export interface ForwardServiceRow {
   port: number;
 }
 
+export function meshProfileActiveKey(row: MeshProfile): string {
+  return `${row.namespace}/${row.appName}/${row.virtualEnv}`;
+}
+
+export function meshSessionActiveKey(session: Session, meshUserId: string): string {
+  return `${session.namespace}/${session.target}/${clusterVirtualEnvFromMeshSession(session, meshUserId)}`;
+}
+
 export function meshProfileKey(row: MeshProfile): string {
   return meshServiceKey(row.namespace, row.deploymentName);
 }
@@ -53,12 +61,13 @@ export function filterMeshProfilesForTab(
   }
 
   const activeKeys = new Set(
-    activeMeshes.map((s) => meshServiceKey(s.namespace, s.target)),
+    activeMeshes.map((s) => meshSessionActiveKey(s, meshUserId)),
   );
-  const fromCatalog = catalog.filter((p) => activeKeys.has(meshProfileKey(p)));
-  const covered = new Set(fromCatalog.map(meshProfileKey));
+  const fromCatalog = catalog.filter((p) => activeKeys.has(meshProfileActiveKey(p)));
   const orphans = activeMeshes
-    .filter((s) => !covered.has(meshServiceKey(s.namespace, s.target)))
+    .filter(
+      (s) => !catalog.some((p) => meshProfileActiveKey(p) === meshSessionActiveKey(s, meshUserId)),
+    )
     .map((s) => meshProfileFromSession(s, meshUserId));
   return [...fromCatalog, ...orphans];
 }

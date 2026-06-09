@@ -18,6 +18,12 @@ export function buildMeshVersion(baseVirtualEnv: string, userId: string): string
   return `${baseVirtualEnv}.${id}`;
 }
 
+/** ktctl mesh 目标名：多版本 Deployment 共用同一 Service 名 */
+export function meshTargetName(profile: MeshProfile): string {
+  const name = profile.appName.trim();
+  return name || profile.deploymentName;
+}
+
 export function buildMeshCommand(
   profile: MeshProfile,
   localPort: number,
@@ -30,9 +36,10 @@ export function buildMeshCommand(
     `virtual-env=${profile.virtualEnv}`,
   ].join(',');
 
+  const target = meshTargetName(profile);
   const args = [
     'mesh',
-    profile.deploymentName,
+    target,
     '--namespace',
     profile.namespace,
     '--versionMark',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMeshCommand, buildMeshVersion } from './mesh-command.js';
+import { buildMeshCommand, buildMeshVersion, meshTargetName } from './mesh-command.js';
 import type { MeshProfile } from './types.js';
 
 const profile: MeshProfile = {
@@ -37,5 +37,22 @@ describe('buildMeshCommand', () => {
     expect(cmd.args).toContain('--expose');
     expect(cmd.args).toContain('8001:80');
     expect(cmd.args).toContain('--useShadowDeployment');
+  });
+
+  it('uses appName as mesh target when deployment has version suffix', () => {
+    const versioned: MeshProfile = {
+      deploymentName: 'bms-goods-server-v1',
+      namespace: 'app-bsc',
+      virtualEnv: 'dev.v1',
+      env: 'dev',
+      appName: 'bms-goods-server',
+      containerPort: 8080,
+      suggestedLocalPort: 8080,
+    };
+    expect(meshTargetName(versioned)).toBe('bms-goods-server');
+    const cmd = buildMeshCommand(versioned, 8080, 'guoming');
+    expect(cmd.args[1]).toBe('bms-goods-server');
+    const selector = cmd.args[cmd.args.indexOf('-l') + 1];
+    expect(selector).toContain('app.kubernetes.io/name=bms-goods-server');
   });
 });

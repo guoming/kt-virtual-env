@@ -20,8 +20,11 @@ import { requireKtveApi } from '../lib/api';
 import { MESH_HEADER } from '../lib/branding';
 import {
   countFavoriteMeshInCatalog,
+  clusterVirtualEnvFromMeshSession,
   filterMeshProfilesForTab,
+  meshProfileActiveKey,
   meshProfileKey,
+  meshSessionActiveKey,
 } from '../lib/service-list';
 import { profileKey, useAppStore } from '../stores/app-store';
 
@@ -239,7 +242,7 @@ export function HomePage() {
 
   const isAlreadyMeshing = (row: MeshProfile): Session | undefined =>
     activeMeshes.find(
-      (s) => s.target === row.deploymentName && s.namespace === row.namespace,
+      (s) => meshSessionActiveKey(s, meshUserId) === meshProfileActiveKey(row),
     );
 
   const stopMesh = async (id: string) => {
