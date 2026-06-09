@@ -15,7 +15,7 @@ import (
 	"git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper/ipc"
 )
 
-const helperVersion = "0.1.12"
+const helperVersion = "0.1.13"
 
 func main() {
 	socketFlag := flag.String("socket", "", "IPC endpoint (tcp:127.0.0.1:port or unix path)")

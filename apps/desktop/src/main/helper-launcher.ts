@@ -1,5 +1,6 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { CONFIG_DIR } from './config-store.js';
 import { appendHelperLauncherLog, getHelperLogPath } from './helper-log.js';
@@ -7,14 +8,24 @@ import { getHelperSocketPath, isTcpHelperEndpoint } from './helper-socket.js';
 import { getHelperPath } from './binary-resolver.js';
 import { HelperClient } from './helper-client.js';
 import { resolvePowershellPath } from './powershell-path.js';
+import { encodePowerShellCommand, isWindowsProcessElevated } from './windows-elevation.js';
 
 export async function isHelperRunning(): Promise<boolean> {
   try {
     const client = new HelperClient();
-    await client.connect(1000);
-    client.send({ cmd: 'ping' });
+    await client.connect(1500);
+    const pong = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 2000);
+      client.onMessage((msg) => {
+        if (msg.event === 'pong') {
+          clearTimeout(timer);
+          resolve(true);
+        }
+      });
+      client.send({ cmd: 'ping' });
+    });
     client.close();
-    return true;
+    return pong;
   } catch {
     return false;
   }
@@ -66,13 +77,42 @@ export function buildWindowsElevatedLaunchCommand(
   return `$p='${escapedHelper}'; Start-Process -FilePath $p -Verb RunAs -WindowStyle Hidden -ArgumentList '${socketArg}','${logArg}'`;
 }
 
-function spawnDetached(command: string, args: string[]): Promise<void> {
+function spawnDetached(command: string, args: string[], logFd?: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: logFd === undefined ? 'ignore' : ['ignore', logFd, logFd],
+      windowsHide: true,
+    });
     child.once('error', reject);
     child.once('spawn', () => {
       child.unref();
       resolve();
+    });
+  });
+}
+
+function spawnHelperDirect(helper: string, socketPath: string, logPath: string): void {
+  const args = [`-socket=${socketPath}`, `-log=${logPath}`];
+  appendHelperLauncherLog(`direct start helper args=${args.join(' ')}`);
+  const child = spawn(helper, args, { detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+}
+
+async function probeHelperEndpoint(endpoint: string): Promise<string> {
+  if (!endpoint.startsWith('tcp:')) return 'non-tcp endpoint';
+  const [host, portRaw] = endpoint.slice(4).split(':');
+  const port = Number(portRaw);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve('tcp connect timeout'), 2000);
+    const conn = net.createConnection({ host, port }, () => {
+      clearTimeout(timer);
+      conn.destroy();
+      resolve('tcp port open');
+    });
+    conn.on('error', (err) => {
+      clearTimeout(timer);
+      resolve(`tcp connect error: ${err.message}`);
     });
   });
 }
@@ -94,18 +134,31 @@ async function launchHelperWindowsElevated(helper: string, socketPath: string): 
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   appendHelperLauncherLog(`prepare elevate helper=${helper} socket=${socketPath}`);
 
+  if (isWindowsProcessElevated()) {
+    appendHelperLauncherLog('process already elevated, skip RunAs');
+    spawnHelperDirect(helper, socketPath, logPath);
+    return;
+  }
+
+  const script = buildWindowsElevatedLaunchScript(helper, socketPath, logPath);
   const scriptPath = path.join(CONFIG_DIR, 'launch-helper.ps1');
-  fs.writeFileSync(scriptPath, buildWindowsElevatedLaunchScript(helper, socketPath, logPath), 'utf8');
+  fs.writeFileSync(scriptPath, `\uFEFF${script}`, 'utf8');
 
   const powershell = resolvePowershellPath();
-  appendHelperLauncherLog(`spawn powershell script=${scriptPath}`);
-  await spawnDetached(powershell, [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    scriptPath,
-  ]);
+  const encoded = encodePowerShellCommand(script);
+  const psLogPath = path.join(CONFIG_DIR, 'launch-helper-ps.log');
+  const psLogFd = fs.openSync(psLogPath, 'a');
+  fs.writeSync(psLogFd, `\n--- ${new Date().toISOString()} powershell=${powershell} ---\n`);
+
+  appendHelperLauncherLog(
+    `spawn powershell exe=${powershell} encoded=${encoded.length} script=${scriptPath}`,
+  );
+
+  try {
+    await spawnDetached(powershell, ['-NoProfile', '-EncodedCommand', encoded], psLogFd);
+  } finally {
+    fs.closeSync(psLogFd);
+  }
 }
 
 export async function launchHelperElevated(): Promise<void> {
@@ -150,7 +203,26 @@ async function waitForHelper(timeoutMs: number): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  appendHelperLauncherLog('helper start timeout');
-  const logHint = `日志: ${getHelperLogPath()}；若未出现 UAC 弹窗，请检查是否被其他窗口遮挡`;
-  throw new Error(`Helper 启动超时，请检查管理员授权。${logHint}，socket: ${getHelperSocketPath()}`);
+
+  const socketPath = getHelperSocketPath();
+  const probe = await probeHelperEndpoint(socketPath);
+  let helperProc = 'unknown';
+  if (process.platform === 'win32') {
+    try {
+      const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq helper-windows-amd64.exe', '/NH'], {
+        windowsHide: true,
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+      helperProc = out.trim() || 'not found';
+    } catch (err) {
+      helperProc = err instanceof Error ? err.message : 'tasklist failed';
+    }
+  }
+
+  appendHelperLauncherLog(`helper start timeout probe=${probe} tasklist=${helperProc}`);
+  const logHint = `日志: ${getHelperLogPath()}；PowerShell 输出: ${path.join(CONFIG_DIR, 'launch-helper-ps.log')}`;
+  throw new Error(
+    `Helper 启动超时，请检查管理员授权或杀软拦截。${logHint}，socket: ${socketPath}，${probe}`,
+  );
 }
