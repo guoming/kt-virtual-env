@@ -135,6 +135,31 @@ export function deriveServiceName(
   return processName;
 }
 
+/** 收藏端口优先，同组内按端口号升序 */
+export function sortLocalDevPortsByFavorites(
+  ports: LocalDevPort[],
+  favoritePorts: Iterable<number>,
+): LocalDevPort[] {
+  const favorites = new Set(favoritePorts);
+  return [...ports].sort((a, b) => {
+    const aFav = favorites.has(a.port) ? 0 : 1;
+    const bFav = favorites.has(b.port) ? 0 : 1;
+    if (aFav !== bFav) return aFav - bFav;
+    return a.port - b.port;
+  });
+}
+
+/** 已收藏但当前未监听的端口 */
+export function listOfflineFavoritePorts(
+  discovered: LocalDevPort[],
+  favoritePorts: Iterable<number>,
+): number[] {
+  const live = new Set(discovered.map((d) => d.port));
+  return [...new Set(favoritePorts)]
+    .filter((port) => !live.has(port))
+    .sort((a, b) => a - b);
+}
+
 export function formatLocalDevPortLabel(port: LocalDevPort): string {
   const runtime = runtimeLabel(port.runtime);
   if (port.serviceName && port.serviceName !== port.processName) {
@@ -154,6 +179,31 @@ export function runtimeLabel(runtime: DevRuntime): string {
     default:
       return '其他';
   }
+}
+
+/** 按端口号前缀或服务/进程/运行时名称过滤本地端口 */
+export function filterLocalDevPorts(ports: LocalDevPort[], query: string): LocalDevPort[] {
+  const q = query.trim();
+  if (!q) return ports;
+
+  if (/^\d+$/.test(q)) {
+    return ports.filter((d) => String(d.port).startsWith(q));
+  }
+
+  const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+  return ports.filter((d) => {
+    const fields = [
+      String(d.port),
+      d.serviceName,
+      d.processName,
+      runtimeLabel(d.runtime),
+    ].map((s) => s.toLowerCase());
+    return tokens.every(
+      (token) =>
+        fields.some((field) => field.includes(token)) ||
+        String(d.port).includes(token),
+    );
+  });
 }
 
 /** 为 Mesh 从已发现的本地开发端口中选择最匹配的一项 */

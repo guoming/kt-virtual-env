@@ -1,17 +1,26 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { runtimeLabel, type LocalDevPort } from '@kt-virtual-env/shared';
+import {
+  filterLocalDevPorts,
+  runtimeLabel,
+  sortLocalDevPortsByFavorites,
+  type LocalDevPort,
+} from '@kt-virtual-env/shared';
+import { FavoriteStarButton } from './FavoriteStarButton';
 
 type LocalDevPortPickerProps = {
   value: string;
   options: LocalDevPort[];
   disabled?: boolean;
+  favoritePorts?: Set<number>;
+  onToggleFavorite?: (port: number) => void;
   onChange: (value: string) => void;
 };
 
@@ -32,7 +41,7 @@ function estimateDropdownWidth(
   let contentWidth = MIN_DROPDOWN_WIDTH;
   for (const option of options) {
     const label = `${option.port} ${option.serviceName} (${runtimeLabel(option.runtime)})`;
-    contentWidth = Math.max(contentWidth, label.length * 7.5 + 28);
+    contentWidth = Math.max(contentWidth, label.length * 7.5 + 56);
   }
   const capped = Math.min(MAX_DROPDOWN_WIDTH, contentWidth);
   return Math.max(inputWidth, capped);
@@ -43,22 +52,33 @@ export function LocalDevPortPicker({
   value,
   options,
   disabled,
+  favoritePorts,
+  onToggleFavorite,
   onChange,
 }: LocalDevPortPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
   const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
+
+  useEffect(() => {
+    if (!open) setDraft(value);
+  }, [value, open]);
+
+  const sortedOptions = useMemo(
+    () => sortLocalDevPortsByFavorites(options, favoritePorts ?? []),
+    [options, favoritePorts],
+  );
+
+  const filteredOptions = useMemo(
+    () => filterLocalDevPorts(sortedOptions, open ? draft : value),
+    [sortedOptions, open, draft, value],
+  );
 
   const matched = useMemo(() => {
     const port = Number.parseInt(value, 10);
     if (!Number.isFinite(port)) return undefined;
     return options.find((d) => d.port === port);
-  }, [value, options]);
-
-  const filteredOptions = useMemo(() => {
-    const q = value.trim();
-    if (!q) return options;
-    return options.filter((d) => String(d.port).startsWith(q));
   }, [value, options]);
 
   const updateMenuPos = useCallback(() => {
@@ -104,8 +124,26 @@ export function LocalDevPortPicker({
   }, [open, updateMenuPos, filteredOptions.length]);
 
   const selectPort = (port: number) => {
-    onChange(String(port));
+    const next = String(port);
+    setDraft(next);
+    onChange(next);
     setOpen(false);
+  };
+
+  const commitDraft = () => {
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      onChange('');
+      return;
+    }
+    const asPort = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(asPort) && String(asPort) === trimmed) {
+      onChange(trimmed);
+      return;
+    }
+    if (filteredOptions.length === 1) {
+      selectPort(filteredOptions[0]!.port);
+    }
   };
 
   const dropdown =
@@ -120,49 +158,79 @@ export function LocalDevPortPicker({
               maxHeight: menuPos.maxHeight,
             }}
           >
-            {filteredOptions.map((d) => (
-              <li key={`${d.pid}-${d.port}`}>
-                <button
-                  type="button"
-                  className="w-full whitespace-nowrap px-3 py-1.5 text-left hover:bg-gray-100"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => selectPort(d.port)}
-                >
-                  <span className="font-mono text-sm">{d.port}</span>
-                  <span className="ml-2 text-sm text-gray-800">{d.serviceName}</span>
-                  <span className="ml-2 text-xs text-gray-500">
-                    ({runtimeLabel(d.runtime)})
-                  </span>
-                </button>
-              </li>
-            ))}
+            {filteredOptions.map((d) => {
+              const favLabel = `${d.port} ${d.serviceName}`;
+              const favorited = favoritePorts?.has(d.port) ?? false;
+              return (
+                <li key={`${d.pid}-${d.port}`}>
+                  <div className="flex items-center gap-1 pr-1 hover:bg-gray-100">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 whitespace-nowrap px-3 py-1.5 text-left"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selectPort(d.port)}
+                    >
+                      <span className="font-mono text-sm">{d.port}</span>
+                      <span className="ml-2 text-sm text-gray-800">{d.serviceName}</span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        ({runtimeLabel(d.runtime)})
+                      </span>
+                    </button>
+                    {onToggleFavorite && (
+                      <FavoriteStarButton
+                        active={favorited}
+                        label={favLabel}
+                        onToggle={() => onToggleFavorite(d.port)}
+                      />
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>,
           document.body,
         )
       : null;
 
   return (
-    <div className="w-[6.5rem]">
+    <div className="min-w-[6.5rem] max-w-[11rem]">
       <input
         ref={inputRef}
         type="text"
-        inputMode="numeric"
-        placeholder="选择或输入"
+        placeholder="端口或服务名"
         disabled={disabled}
-        value={value}
-        className="w-full rounded border px-2 py-1 font-mono text-sm"
-        onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        value={open ? draft : value}
+        className="w-full rounded border px-2 py-1 text-sm"
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setDraft(value);
+          setOpen(true);
+        }}
+        onBlur={() => {
+          setTimeout(() => {
+            commitDraft();
+            setOpen(false);
+          }, 150);
+        }}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
-          if (e.key === 'Enter' && filteredOptions.length === 1) {
-            selectPort(filteredOptions[0]!.port);
+          if (e.key === 'Escape') {
+            setDraft(value);
+            setOpen(false);
+          }
+          if (e.key === 'Enter') {
+            if (filteredOptions.length === 1) {
+              selectPort(filteredOptions[0]!.port);
+            } else {
+              commitDraft();
+            }
           }
         }}
       />
       {dropdown}
-      {matched && (
+      {matched && !open && (
         <div className="mt-0.5 text-xs text-gray-500">
           {matched.serviceName} · {runtimeLabel(matched.runtime)}
         </div>

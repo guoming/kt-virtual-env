@@ -80,6 +80,7 @@ export const MOCK_CONFIG = {
   stainExtensionPaths: [] as string[],
   favoriteMeshKeys: ['app-demo/demo-api-server'],
   favoriteForwardKeys: [] as string[],
+  favoriteLocalDevPorts: [8080, 8888],
 };
 
 export const MOCK_ENVIRONMENT: EnvironmentStatus = {

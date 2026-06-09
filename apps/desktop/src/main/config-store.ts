@@ -25,6 +25,8 @@ export interface AppConfig {
   favoriteMeshKeys: string[];
   /** 端口转发收藏：namespace/serviceName */
   favoriteForwardKeys: string[];
+  /** 本地开发服务端口收藏（端口号） */
+  favoriteLocalDevPorts: number[];
 }
 
 const LEGACY_CONFIG_DIR = path.join(os.homedir(), '.zt-virtual-env');
@@ -56,6 +58,7 @@ const DEFAULTS: AppConfig = {
   connectDnsNamespaces: [],
   favoriteMeshKeys: [],
   favoriteForwardKeys: [],
+  favoriteLocalDevPorts: [],
   stainUrlHistory: [],
   stainDevTools: false,
   stainExtensionPaths: [],

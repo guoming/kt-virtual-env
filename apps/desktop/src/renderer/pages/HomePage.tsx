@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   buildMeshVersion,
+  listOfflineFavoritePorts,
   runtimeLabel,
+  sortLocalDevPortsByFavorites,
   type LocalDevPort,
   type MeshProfile,
   type Session,
@@ -10,6 +12,7 @@ import { FavoriteStarButton } from '../components/FavoriteStarButton';
 import { LocalDevPortPicker } from '../components/LocalDevPortPicker';
 import { HealthDot, HealthStatusPanel } from '../components/HealthStatusPanel';
 import { ServiceListTabs, type ServiceListTab } from '../components/ServiceListTabs';
+import { useLocalDevPortFavorites } from '../hooks/use-local-dev-port-favorites';
 import { useSessionsHealthPolling } from '../hooks/use-health-polling';
 import { useServiceFavorites } from '../hooks/use-service-favorites';
 import { summarizeHealth } from '../lib/health-utils';
@@ -83,6 +86,22 @@ export function HomePage() {
   const [localDevPorts, setLocalDevPorts] = useState<LocalDevPort[]>([]);
   const [scanningPorts, setScanningPorts] = useState(false);
   const { toggleFavorite, isFavorite, favorites } = useServiceFavorites('mesh');
+  const {
+    favorites: favoriteLocalPorts,
+    toggleFavorite: toggleLocalPortFavorite,
+    isFavorite: isLocalPortFavorite,
+    favoriteCount: favoriteLocalPortCount,
+  } = useLocalDevPortFavorites();
+
+  const sortedLocalDevPorts = useMemo(
+    () => sortLocalDevPortsByFavorites(localDevPorts, favoriteLocalPorts),
+    [localDevPorts, favoriteLocalPorts],
+  );
+
+  const offlineFavoriteLocalPorts = useMemo(
+    () => listOfflineFavoritePorts(localDevPorts, favoriteLocalPorts),
+    [localDevPorts, favoriteLocalPorts],
+  );
 
   const activeMeshes = useMemo(
     () =>
@@ -390,7 +409,14 @@ export function HomePage() {
 
       <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="font-medium text-gray-800">本地开发服务端口</span>
+          <span className="font-medium text-gray-800">
+            本地开发服务端口
+            {favoriteLocalPortCount > 0 && (
+              <span className="ml-2 text-xs font-normal text-amber-700">
+                收藏 {favoriteLocalPortCount}
+              </span>
+            )}
+          </span>
           <button
             type="button"
             className="text-xs text-blue-700 hover:underline disabled:text-gray-400"
@@ -400,23 +426,50 @@ export function HomePage() {
             {scanningPorts ? '扫描中…' : '重新扫描'}
           </button>
         </div>
-        {localDevPorts.length === 0 ? (
+        {sortedLocalDevPorts.length === 0 && offlineFavoriteLocalPorts.length === 0 ? (
           <p className="mt-1 text-gray-600">
             未检测到 Java / Node / .NET 监听端口。请先在本机启动应用后再转发。
           </p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-2">
-            {localDevPorts.map((d) => (
+            {sortedLocalDevPorts.map((d) => {
+              const favLabel = `${d.port} ${d.serviceName}`;
+              return (
+                <span
+                  key={`${d.pid}-${d.port}`}
+                  className={`inline-flex items-center gap-0.5 rounded-full border bg-white pl-2.5 pr-1 py-0.5 text-xs text-gray-700 ${
+                    isLocalPortFavorite(d.port)
+                      ? 'border-amber-300 bg-amber-50'
+                      : 'border-gray-200'
+                  }`}
+                  title={`${d.serviceName} · ${runtimeLabel(d.runtime)} · PID ${d.pid}`}
+                >
+                  <span className="font-mono">{d.port}</span>
+                  {d.serviceName !== d.processName && (
+                    <span className="ml-1.5 font-medium text-gray-800">{d.serviceName}</span>
+                  )}
+                  <span className="ml-1 text-gray-500">({runtimeLabel(d.runtime)})</span>
+                  <FavoriteStarButton
+                    active={isLocalPortFavorite(d.port)}
+                    label={favLabel}
+                    onToggle={() => void toggleLocalPortFavorite(d.port)}
+                  />
+                </span>
+              );
+            })}
+            {offlineFavoriteLocalPorts.map((port) => (
               <span
-                key={`${d.pid}-${d.port}`}
-                className="rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-700"
-                title={`${d.serviceName} · ${runtimeLabel(d.runtime)} · PID ${d.pid}`}
+                key={`offline-${port}`}
+                className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-amber-300 bg-amber-50/60 pl-2.5 pr-1 py-0.5 text-xs text-gray-500"
+                title="已收藏，当前未监听"
               >
-                <span className="font-mono">{d.port}</span>
-                {d.serviceName !== d.processName && (
-                  <span className="ml-1.5 font-medium text-gray-800">{d.serviceName}</span>
-                )}
-                <span className="ml-1 text-gray-500">({runtimeLabel(d.runtime)})</span>
+                <span className="font-mono">{port}</span>
+                <span className="ml-1">(未监听)</span>
+                <FavoriteStarButton
+                  active
+                  label={String(port)}
+                  onToggle={() => void toggleLocalPortFavorite(port)}
+                />
               </span>
             ))}
           </div>
@@ -526,7 +579,9 @@ export function HomePage() {
                     ) : (
                       <LocalDevPortPicker
                         value={portInput}
-                        options={localDevPorts}
+                        options={sortedLocalDevPorts}
+                        favoritePorts={favoriteLocalPorts}
+                        onToggleFavorite={(port) => void toggleLocalPortFavorite(port)}
                         onChange={(v) => setLocalPortInput(key, v)}
                       />
                     )}
