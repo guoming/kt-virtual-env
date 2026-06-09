@@ -14,7 +14,15 @@ export interface AppUpdateStatus {
   latestVersion?: string;
   downloadPercent?: number;
   message?: string;
+  /** auto：可应用内重启安装；manual：须从 GitHub 下载 DMG（未签名构建） */
+  installMode?: 'auto' | 'manual';
 }
+
+export type UpdateInstallResult =
+  | { ok: true }
+  | { ok: false; reason: 'sessions'; count: number }
+  | { ok: false; reason: 'unsigned' }
+  | { ok: false; reason: 'not-ready' };
 
 export const INITIAL_UPDATE_STATUS = (currentVersion: string): AppUpdateStatus => ({
   phase: 'idle',
@@ -29,6 +37,11 @@ export function formatUpdateErrorMessage(raw?: string): string {
 
   if (/429|rate limit/i.test(text)) {
     return 'GitHub 请求过于频繁，请稍后再试';
+  }
+  if (
+    /code signature|代码对象根本未签名|not signed|ShipIt|did not pass validation/i.test(text)
+  ) {
+    return '当前安装包未进行 Apple 代码签名，无法使用应用内自动更新。请前往 GitHub Releases 下载最新 DMG 手动安装。';
   }
   if (
     /^\d{3}$/.test(firstLine) ||

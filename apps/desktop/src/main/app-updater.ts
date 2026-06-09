@@ -4,21 +4,28 @@ import {
   INITIAL_UPDATE_STATUS,
   formatUpdateErrorMessage,
   type AppUpdateStatus,
+  type UpdateInstallResult,
 } from '@kt-virtual-env/shared';
+import { isMacAppProperlySigned } from './macos-code-sign.js';
 
 const { autoUpdater } = updater;
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const STARTUP_DELAY_MS = 10_000;
 
+const MANUAL_INSTALL_HINT =
+  '当前 macOS 安装包未签名，无法应用内自动更新。发现新版本后请从 GitHub Releases 下载 DMG 手动安装。';
+
 export class AppUpdater {
   private status: AppUpdateStatus;
   private listeners = new Set<(status: AppUpdateStatus) => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private started = false;
+  private readonly manualInstallOnly: boolean;
 
   constructor(private notify: (status: AppUpdateStatus) => void) {
     this.status = INITIAL_UPDATE_STATUS(app.getVersion());
+    this.manualInstallOnly = process.platform === 'darwin' && !isMacAppProperlySigned();
   }
 
   start(): void {
@@ -34,14 +41,24 @@ export class AppUpdater {
       return;
     }
 
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.autoRunAppAfterInstall = true;
+    autoUpdater.autoDownload = !this.manualInstallOnly;
+    autoUpdater.autoInstallOnAppQuit = !this.manualInstallOnly;
+    autoUpdater.autoRunAppAfterInstall = !this.manualInstallOnly;
+
+    if (this.manualInstallOnly) {
+      this.setStatus({
+        phase: 'idle',
+        currentVersion: app.getVersion(),
+        installMode: 'manual',
+        message: MANUAL_INSTALL_HINT,
+      });
+    }
 
     autoUpdater.on('checking-for-update', () => {
       this.setStatus({
         phase: 'checking',
         currentVersion: app.getVersion(),
+        installMode: this.manualInstallOnly ? 'manual' : 'auto',
         message: '正在检查更新…',
       });
     });
@@ -51,7 +68,10 @@ export class AppUpdater {
         phase: 'available',
         currentVersion: app.getVersion(),
         latestVersion: info.version,
-        message: `发现新版本 ${info.version}，正在下载…`,
+        installMode: this.manualInstallOnly ? 'manual' : 'auto',
+        message: this.manualInstallOnly
+          ? `发现新版本 ${info.version}，请从 GitHub 下载 DMG 手动安装`
+          : `发现新版本 ${info.version}，正在下载…`,
       });
     });
 
@@ -60,7 +80,8 @@ export class AppUpdater {
         phase: 'not-available',
         currentVersion: app.getVersion(),
         latestVersion: info.version,
-        message: '当前已是最新版本',
+        installMode: this.manualInstallOnly ? 'manual' : 'auto',
+        message: this.manualInstallOnly ? '当前已是最新版本' : '当前已是最新版本',
       });
     });
 
@@ -70,6 +91,7 @@ export class AppUpdater {
         currentVersion: app.getVersion(),
         latestVersion: this.status.latestVersion,
         downloadPercent: Math.round(progress.percent),
+        installMode: 'auto',
         message: `正在下载更新 ${Math.round(progress.percent)}%`,
       });
     });
@@ -80,6 +102,7 @@ export class AppUpdater {
         currentVersion: app.getVersion(),
         latestVersion: info.version,
         downloadPercent: 100,
+        installMode: 'auto',
         message: `新版本 ${info.version} 已就绪，可立即重启安装`,
       });
     });
@@ -89,6 +112,7 @@ export class AppUpdater {
         phase: 'error',
         currentVersion: app.getVersion(),
         latestVersion: this.status.latestVersion,
+        installMode: this.manualInstallOnly ? 'manual' : 'auto',
         message: formatUpdateErrorMessage(error.message),
       });
     });
@@ -116,15 +140,19 @@ export class AppUpdater {
       this.setStatus({
         phase: 'error',
         currentVersion: app.getVersion(),
+        installMode: this.manualInstallOnly ? 'manual' : 'auto',
         message: formatUpdateErrorMessage(message),
       });
     }
     return this.status;
   }
 
-  installUpdate(): void {
-    if (!app.isPackaged || this.status.phase !== 'downloaded') return;
+  installUpdate(): UpdateInstallResult {
+    if (!app.isPackaged) return { ok: false, reason: 'not-ready' };
+    if (this.manualInstallOnly) return { ok: false, reason: 'unsigned' };
+    if (this.status.phase !== 'downloaded') return { ok: false, reason: 'not-ready' };
     autoUpdater.quitAndInstall(false, true);
+    return { ok: true };
   }
 
   private setStatus(status: AppUpdateStatus): void {

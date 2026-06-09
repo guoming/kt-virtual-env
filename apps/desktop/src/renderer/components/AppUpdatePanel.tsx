@@ -35,6 +35,9 @@ export function AppUpdatePanel() {
     setMessage('');
     try {
       const result = await requireKtveApi().update.install();
+      if (!result.ok && result.reason === 'unsigned') {
+        setMessage('当前安装包未签名，请从 GitHub 下载 DMG 手动安装');
+      }
       if (!result.ok && result.reason === 'sessions') {
         setMessage(`请先停止 ${result.count} 个活跃会话后再更新`);
       }
@@ -47,7 +50,10 @@ export function AppUpdatePanel() {
 
   if (!status) return null;
 
-  const canInstall = status.phase === 'downloaded';
+  const canInstall = status.phase === 'downloaded' && status.installMode !== 'manual';
+  const showManualDownload =
+    status.installMode === 'manual' &&
+    (status.phase === 'available' || status.phase === 'idle' || status.phase === 'error');
   const showProgress =
     status.phase === 'downloading' && status.downloadPercent != null;
 
@@ -132,6 +138,19 @@ export function AppUpdatePanel() {
         >
           前往 GitHub 下载最新安装包
         </a>
+      )}
+
+      {showManualDownload && (
+        <button
+          type="button"
+          className="mt-3 rounded border border-blue-600 px-4 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
+          onClick={(e) => {
+            e.preventDefault();
+            void requireKtveApi().shell.openExternal(`${APP_REPO_URL}/releases`);
+          }}
+        >
+          前往 GitHub 下载 DMG
+        </button>
       )}
 
       {canInstall && (

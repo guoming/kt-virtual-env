@@ -299,8 +299,11 @@ function registerIpc(): void {
     if (running.length > 0) {
       return { ok: false as const, reason: 'sessions' as const, count: running.length };
     }
+    const result = getAppUpdater()?.installUpdate();
+    if (result && !result.ok) {
+      return result;
+    }
     isQuitting = true;
-    getAppUpdater()?.installUpdate();
     return { ok: true as const };
   });
 

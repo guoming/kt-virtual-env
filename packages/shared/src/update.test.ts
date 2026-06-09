@@ -11,6 +11,13 @@ body: <html><body><h1>504 Gateway Time-out</h1></body></html>`;
     expect(formatUpdateErrorMessage(raw)).toBe('无法连接更新服务器，请检查网络后重试');
   });
 
+  it('explains unsigned macOS auto-update failure', () => {
+    const raw =
+      'Code signature at URL file:///Users/dev/Library/Caches/com.kt.virtualenv.ShipIt/update/kt-virtual-env.app/ did not pass validation: 代码对象根本未签名';
+    expect(formatUpdateErrorMessage(raw)).toMatch(/未进行 Apple 代码签名/);
+    expect(formatUpdateErrorMessage(raw)).toMatch(/DMG 手动安装/);
+  });
+
   it('handles rate limiting', () => {
     expect(formatUpdateErrorMessage('429 rate limit exceeded')).toMatch(/过于频繁/);
   });
