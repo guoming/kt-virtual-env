@@ -1,11 +1,12 @@
 import { buildMeshCommand } from '@kt-virtual-env/shared';
-import { isProcessAlive } from './process-utils.js';
+import { isProcessAlive, isLocalPortOpen } from './process-utils.js';
 import type { ForwardParams, MeshProfile } from '@kt-virtual-env/shared';
 import { getBundledBinary } from './binary-resolver.js';
 import { ProcessRunner } from './process-runner.js';
 import { SessionManager } from './session-manager.js';
 import { loadConfig } from './config-store.js';
 import type { RestartSpecRegistry } from './restart-spec-registry.js';
+import { probeKtctlSessionPid } from './ktctl-session-probe.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -20,19 +21,7 @@ export class KtctlService {
   ) {}
 
   startForward(params: ForwardParams): string {
-    const ktctl = getBundledBinary('ktctl');
-    const args = [
-      'forward',
-      params.service,
-      `${params.localPort}:${params.remotePort}`,
-      '--namespace',
-      params.namespace,
-      '--kubeconfig',
-      params.kubeconfig,
-    ];
-    if (params.context) {
-      args.push('--context', params.context);
-    }
+    const args = this.buildForwardArgs(params);
     const sessionId = this.spawnKtctl('forward', params.service, params.namespace, args, {
       localPort: params.localPort,
       remotePort: params.remotePort,
@@ -42,12 +31,7 @@ export class KtctlService {
   }
 
   startMesh(profile: MeshProfile, localPort: number, userId: string): string {
-    const cfg = loadConfig();
-    const { args, display, meshVersion } = buildMeshCommand(profile, localPort, userId);
-    args.push('--kubeconfig', cfg.kubeconfig);
-    if (cfg.context) {
-      args.push('--context', cfg.context);
-    }
+    const { args, display, meshVersion } = this.buildMeshArgs(profile, localPort, userId);
     const sessionId = this.spawnKtctl('mesh', profile.deploymentName, profile.namespace, args, {
       localPort,
       virtualEnv: meshVersion,
@@ -57,6 +41,28 @@ export class KtctlService {
     return sessionId;
   }
 
+  private buildForwardArgs(params: ForwardParams): string[] {
+    const args = [
+      'forward',
+      params.service,
+      `${params.localPort}:${params.remotePort}`,
+      '--namespace',
+      params.namespace,
+      '--kubeconfig',
+      params.kubeconfig,
+    ];
+    if (params.context) args.push('--context', params.context);
+    return args;
+  }
+
+  private buildMeshArgs(profile: MeshProfile, localPort: number, userId: string) {
+    const cfg = loadConfig();
+    const { args, display, meshVersion } = buildMeshCommand(profile, localPort, userId);
+    args.push('--kubeconfig', cfg.kubeconfig);
+    if (cfg.context) args.push('--context', cfg.context);
+    return { args, display, meshVersion };
+  }
+
   private spawnKtctl(
     type: 'forward' | 'mesh',
     target: string,
@@ -64,7 +70,6 @@ export class KtctlService {
     args: string[],
     extra: { localPort?: number; remotePort?: number; virtualEnv?: string; commandOverride?: string },
   ): string {
-    const ktctl = getBundledBinary('ktctl');
     const session = this.sessions.create({
       type,
       target,
@@ -74,39 +79,95 @@ export class KtctlService {
       remotePort: extra.remotePort,
       virtualEnv: extra.virtualEnv,
     });
-    const runner = new ProcessRunner();
-    runner.on('log', (line: string) => this.sessions.appendLog(session.id, line));
-    runner.on('exit', ({ code, signal }) => {
-      const current = this.sessions.get(session.id);
-      if (!current) {
-        this.runners.delete(session.id);
-        return;
-      }
-      if (current.state === 'stopped') {
-        this.registry.delete(session.id);
-        this.sessions.remove(session.id);
-        this.runners.delete(session.id);
-        return;
-      }
-      const gracefulExit =
-        runner.stoppedByUser ||
-        code === 0 ||
-        signal === 'SIGTERM' ||
-        signal === 'SIGINT' ||
-        signal === 'SIGKILL';
-      if (gracefulExit) {
-        this.registry.delete(session.id);
-        this.sessions.remove(session.id);
-      } else {
-        this.sessions.markFailed(session.id);
-      }
-      this.runners.delete(session.id);
-    });
-    this.sessions.markStarting(session.id);
-    runner.start(ktctl, args);
-    this.sessions.markRunning(session.id, runner.pid ?? 0);
-    this.runners.set(session.id, runner);
+    this.startRunner(session.id, args);
     return session.id;
+  }
+
+  private startRunner(sessionId: string, args: string[]): void {
+    const ktctl = getBundledBinary('ktctl');
+    const runner = new ProcessRunner();
+    this.bindRunner(sessionId, runner);
+    this.sessions.markStarting(sessionId);
+    runner.start(ktctl, args);
+    this.sessions.markRunning(sessionId, runner.pid ?? 0);
+    this.runners.set(sessionId, runner);
+  }
+
+  private bindRunner(sessionId: string, runner: ProcessRunner): void {
+    runner.on('log', (line: string) => this.sessions.appendLog(sessionId, line));
+    runner.on('exit', ({ code, signal }) => {
+      void this.handleRunnerExit(sessionId, runner, code, signal);
+    });
+  }
+
+  private async handleRunnerExit(
+    sessionId: string,
+    runner: ProcessRunner,
+    code: number | null,
+    signal: NodeJS.Signals | null,
+  ): Promise<void> {
+    const current = this.sessions.get(sessionId);
+    if (!current) {
+      this.runners.delete(sessionId);
+      return;
+    }
+    if (current.state === 'stopped') {
+      this.registry.delete(sessionId);
+      this.sessions.remove(sessionId);
+      this.runners.delete(sessionId);
+      return;
+    }
+
+    const gracefulExit =
+      runner.stoppedByUser ||
+      code === 0 ||
+      signal === 'SIGTERM' ||
+      signal === 'SIGINT' ||
+      signal === 'SIGKILL';
+
+    if (gracefulExit && (current.type === 'mesh' || current.type === 'forward')) {
+      const pid = await probeKtctlSessionPid(current);
+      if (pid) {
+        this.sessions.markRunning(sessionId, pid);
+        this.runners.delete(sessionId);
+        return;
+      }
+      if (current.localPort && (await isLocalPortOpen(current.localPort))) {
+        this.sessions.markRunning(sessionId, 0);
+        this.runners.delete(sessionId);
+        return;
+      }
+    }
+
+    if (gracefulExit) {
+      this.registry.delete(sessionId);
+      this.sessions.remove(sessionId);
+    } else {
+      this.sessions.markFailed(sessionId);
+    }
+    this.runners.delete(sessionId);
+  }
+
+  async restartSession(sessionId: string): Promise<void> {
+    const spec = this.registry.getSession(sessionId);
+    const session = this.sessions.get(sessionId);
+    if (!spec || !session) return;
+
+    this.runners.get(sessionId)?.stop();
+    this.runners.delete(sessionId);
+
+    try {
+      await this.recover(session.target, session.namespace);
+    } catch {
+      // recover 尽力而为
+    }
+
+    const args =
+      spec.type === 'forward'
+        ? this.buildForwardArgs(spec.params)
+        : this.buildMeshArgs(spec.profile, spec.localPort, spec.userId).args;
+
+    this.startRunner(sessionId, args);
   }
 
   async stopSession(id: string): Promise<void> {
@@ -148,9 +209,21 @@ export class KtctlService {
     await execFileAsync(ktctl, args);
   }
 
-  isProcessRunning(id: string): boolean {
+  async isProcessRunning(id: string): Promise<boolean> {
     const runner = this.runners.get(id);
-    const pid = runner?.pid ?? this.sessions.get(id)?.pid;
-    return isProcessAlive(pid);
+    if (runner?.pid && isProcessAlive(runner.pid)) return true;
+
+    const session = this.sessions.get(id);
+    if (!session) return false;
+
+    if (session.type === 'mesh' || session.type === 'forward') {
+      const pid = await probeKtctlSessionPid(session);
+      if (pid) {
+        if (session.pid !== pid) this.sessions.markRunning(id, pid);
+        return true;
+      }
+    }
+
+    return isProcessAlive(session.pid);
   }
 }

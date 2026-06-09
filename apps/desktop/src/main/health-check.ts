@@ -1,7 +1,5 @@
 import { execFile } from 'node:child_process';
 import dns from 'node:dns/promises';
-import fs from 'node:fs';
-import path from 'node:path';
 import { promisify } from 'node:util';
 import {
   buildHealthResult,
@@ -11,7 +9,7 @@ import {
 import { getBundledBinary } from './binary-resolver.js';
 import { loadConfig } from './config-store.js';
 import type { K8sService } from './k8s-service.js';
-import { getElevatedKtHome } from './kt-state.js';
+import { getElevatedKtHome, readPidFromKtDir } from './kt-state.js';
 import type { KtctlService } from './ktctl-service.js';
 import { retryUntilPass } from './probe-retry.js';
 import { isLocalPortOpen, isProcessAlive } from './process-utils.js';
@@ -20,21 +18,10 @@ const execFileAsync = promisify(execFile);
 
 const PROBE_RETRY = { attempts: 5, intervalMs: 1000 };
 const CONNECT_HEALTH_GRACE_MS = 60_000;
+const SESSION_HEALTH_GRACE_MS = 30_000;
 
-function readPidFromKtDir(ktHome: string, nameHint: string): number | undefined {
-  const pidDir = path.join(ktHome, '.kt', 'pid');
-  if (!fs.existsSync(pidDir)) return undefined;
-  for (const file of fs.readdirSync(pidDir)) {
-    if (!file.toLowerCase().includes(nameHint)) continue;
-    try {
-      const raw = fs.readFileSync(path.join(pidDir, file), 'utf8').trim();
-      const pid = Number.parseInt(raw, 10);
-      if (pid > 0 && isProcessAlive(pid)) return pid;
-    } catch {
-      // ignore unreadable pid files
-    }
-  }
-  return undefined;
+function readConnectPidFromKtDir(ktHome: string): number | undefined {
+  return readPidFromKtDir(ktHome, 'connect');
 }
 
 async function probeKtctlConnectProcess(): Promise<{ ok: boolean; detail: string }> {
@@ -117,6 +104,12 @@ async function probeClusterDns(namespace: string): Promise<{ ok: boolean; detail
   }
 }
 
+function isWithinSessionGracePeriod(session: Session): boolean {
+  if (!session.runningAt) return false;
+  const elapsed = Date.now() - Date.parse(session.runningAt);
+  return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < SESSION_HEALTH_GRACE_MS;
+}
+
 function isWithinConnectGracePeriod(session: Session): boolean {
   if (!session.runningAt) return false;
   const elapsed = Date.now() - Date.parse(session.runningAt);
@@ -176,8 +169,8 @@ export async function checkConnectHealth(
     const proc = await probeKtctlConnectProcess();
     connectProcLine = proc.detail;
     if (proc.ok) return true;
-    const connectPid = readPidFromKtDir(getElevatedKtHome(), 'connect');
-    if (connectPid) {
+    const connectPid = readConnectPidFromKtDir(getElevatedKtHome());
+    if (connectPid && isProcessAlive(connectPid)) {
       connectProcLine = `✓ ktctl connect 进程存活 (pid ${connectPid})`;
       return true;
     }
@@ -243,16 +236,18 @@ export async function checkSessionHealth(
     return buildHealthResult('unknown', `${label} 未运行`, []);
   }
 
+  if (isWithinSessionGracePeriod(session)) {
+    return buildHealthResult('unknown', `${label} 稳定中`, ['会话刚启动，等待 ktctl 就绪…']);
+  }
+
   const details: string[] = [];
-  const processOk = await retryUntilPass(
-    async () => ktctl.isProcessRunning(session.id),
-    PROBE_RETRY,
-  );
-  details.push(
-    processOk
-      ? `✓ ktctl 进程存活${session.pid ? ` (pid ${session.pid})` : ''}`
-      : '✗ ktctl 进程未运行',
-  );
+  let processLine = '✗ ktctl 进程未运行';
+  const processOk = await retryUntilPass(async () => {
+    const ok = await ktctl.isProcessRunning(session.id);
+    processLine = ok ? '✓ ktctl 进程存活' : '✗ ktctl 进程未运行';
+    return ok;
+  }, PROBE_RETRY);
+  details.push(processLine);
 
   let portOk = false;
   if (session.localPort) {
@@ -292,4 +287,4 @@ export async function checkSessionsHealth(
   return out;
 }
 
-export { CONNECT_HEALTH_GRACE_MS, isWithinConnectGracePeriod };
+export { CONNECT_HEALTH_GRACE_MS, SESSION_HEALTH_GRACE_MS, isWithinConnectGracePeriod, isWithinSessionGracePeriod };

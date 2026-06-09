@@ -85,12 +85,7 @@ export class SessionRecovery {
       `[auto-recovery] 健康检查连续 2 次异常，正在自动重启（第 ${n} 次）…`,
     );
     try {
-      await this.deps.ktctl.stopSession(sessionId);
-      if (spec.type === 'forward') {
-        this.deps.ktctl.startForward(spec.params);
-      } else {
-        this.deps.ktctl.startMesh(spec.profile, spec.localPort, spec.userId);
-      }
+      await this.deps.ktctl.restartSession(sessionId);
     } finally {
       this.recovering.delete(sessionId);
     }

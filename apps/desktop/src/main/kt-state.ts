@@ -42,3 +42,19 @@ export async function ensureUserKtReady(): Promise<void> {
   ensureUserKtDirs();
   await ensurePathWritable(getUserKtDir(), '~/.kt 目录');
 }
+
+export function readPidFromKtDir(ktHome: string, nameHint: string): number | undefined {
+  const pidDir = path.join(ktHome, '.kt', 'pid');
+  if (!fs.existsSync(pidDir)) return undefined;
+  for (const file of fs.readdirSync(pidDir)) {
+    if (!nameHint || !file.toLowerCase().includes(nameHint.toLowerCase())) continue;
+    try {
+      const raw = fs.readFileSync(path.join(pidDir, file), 'utf8').trim();
+      const pid = Number.parseInt(raw, 10);
+      if (pid > 0) return pid;
+    } catch {
+      // ignore unreadable pid files
+    }
+  }
+  return undefined;
+}
