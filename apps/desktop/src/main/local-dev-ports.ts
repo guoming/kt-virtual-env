@@ -40,11 +40,70 @@ function dedupePorts(rows: LocalDevPort[]): LocalDevPort[] {
   const map = new Map<number, LocalDevPort>();
   for (const row of rows) {
     const existing = map.get(row.port);
-    if (!existing || row.runtime !== 'other') {
+    if (!existing) {
+      map.set(row.port, row);
+      continue;
+    }
+    const preferNew =
+      !isSupportedDevRuntime(existing.runtime) && isSupportedDevRuntime(row.runtime);
+    const preferNamedService =
+      existing.serviceName === existing.processName &&
+      row.serviceName !== row.processName;
+    if (preferNew || preferNamedService) {
       map.set(row.port, row);
     }
   }
   return [...map.values()].sort((a, b) => a.port - b.port);
+}
+
+/** 解析 docker ps PORTS 列，例如 0.0.0.0:8080->80/tcp */
+export function parseDockerPublishedPorts(
+  containerName: string,
+  portsField: string,
+): LocalDevPort[] {
+  const rows: LocalDevPort[] = [];
+  const seen = new Set<number>();
+  for (const segment of portsField.split(',')) {
+    const trimmed = segment.trim();
+    const match = trimmed.match(/:(\d+)->\d+\/(?:tcp|udp)/i);
+    if (!match) continue;
+    const port = Number.parseInt(match[1]!, 10);
+    if (!Number.isFinite(port) || port <= 0 || seen.has(port)) continue;
+    seen.add(port);
+    const hostMatch = trimmed.match(/^([\d.]+|\[::\]|\[::1\]|0\.0\.0\.0):/);
+    const host = hostMatch?.[1]?.replace(/^\[|\]$/g, '') ?? '*';
+    rows.push({
+      port,
+      host: host === '::' ? '*' : host,
+      runtime: 'docker',
+      processName: 'docker',
+      serviceName: containerName,
+      pid: 0,
+    });
+  }
+  return rows;
+}
+
+async function discoverDockerPublishedPorts(): Promise<LocalDevPort[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      'docker',
+      ['ps', '--format', '{{.Names}}\t{{.Ports}}'],
+      { timeout: 10_000, maxBuffer: 2 * 1024 * 1024 },
+    );
+    const rows: LocalDevPort[] = [];
+    for (const line of stdout.split('\n')) {
+      const tab = line.indexOf('\t');
+      if (tab <= 0) continue;
+      const name = line.slice(0, tab).trim();
+      const ports = line.slice(tab + 1).trim();
+      if (!name || !ports) continue;
+      rows.push(...parseDockerPublishedPorts(name, ports));
+    }
+    return rows;
+  } catch {
+    return [];
+  }
 }
 
 // [AI-GEN] scope:parseLsofListenLine, model:auto, reviewed:false
@@ -105,16 +164,26 @@ async function enrichServiceNames(rows: LocalDevPort[]): Promise<LocalDevPort[]>
   const commandCache = new Map<number, string | undefined>();
   const enriched: LocalDevPort[] = [];
   for (const row of rows) {
-    let commandLine = commandCache.get(row.pid);
-    if (commandLine === undefined) {
-      commandLine = await resolveCommandLine(row.pid);
-      commandCache.set(row.pid, commandLine);
+    let commandLine: string | undefined;
+    if (row.pid > 0) {
+      let cached = commandCache.get(row.pid);
+      if (cached === undefined) {
+        cached = await resolveCommandLine(row.pid);
+        commandCache.set(row.pid, cached);
+      }
+      commandLine = cached;
     }
-    const runtime = classifyDevRuntime(row.processName, commandLine);
+    const runtime =
+      row.runtime === 'docker' && row.serviceName !== row.processName
+        ? 'docker'
+        : classifyDevRuntime(row.processName, commandLine);
     enriched.push({
       ...row,
       runtime,
-      serviceName: deriveServiceName(runtime, row.processName, commandLine),
+      serviceName:
+        row.runtime === 'docker' && row.serviceName !== row.processName
+          ? row.serviceName
+          : deriveServiceName(runtime, row.processName, commandLine),
     });
   }
   return enriched;
@@ -134,7 +203,8 @@ async function discoverDarwin(): Promise<LocalDevPort[]> {
     const row = parseLsofListenLine(line);
     if (row) rows.push(row);
   }
-  return finalizeDiscoveredPorts(rows);
+  const dockerRows = await discoverDockerPublishedPorts();
+  return finalizeDiscoveredPorts([...rows, ...dockerRows]);
 }
 // [/AI-GEN]
 
@@ -170,7 +240,8 @@ async function discoverWindows(): Promise<LocalDevPort[]> {
       pid,
     });
   }
-  return finalizeDiscoveredPorts(rows);
+  const dockerRows = await discoverDockerPublishedPorts();
+  return finalizeDiscoveredPorts([...rows, ...dockerRows]);
 }
 
 export async function discoverLocalDevPorts(): Promise<LocalDevPort[]> {

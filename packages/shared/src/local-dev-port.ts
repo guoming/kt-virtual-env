@@ -35,6 +35,11 @@ export function classifyDevRuntime(processName: string, commandLine?: string): D
     name.includes('com.docke') ||
     name.includes('docker-pr') ||
     name.includes('vpnkit') ||
+    name.includes('orbstack') ||
+    name.includes('colima') ||
+    name.includes('limactl') ||
+    name.includes('podman') ||
+    name.includes('rancher') ||
     /\bdocker\s+(run|compose|proxy)\b/.test(cmd)
   ) {
     return 'docker';
@@ -224,6 +229,7 @@ export function deriveServiceName(
       return containerMatch[1];
     }
     if (processName.toLowerCase().includes('proxy')) return 'docker-proxy';
+    if (/orbstack/i.test(processName)) return processName;
   }
 
   return processName;

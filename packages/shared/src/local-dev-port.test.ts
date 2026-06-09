@@ -27,6 +27,7 @@ describe('classifyDevRuntime', () => {
     expect(classifyDevRuntime('dotnet')).toBe('dotnet');
     expect(classifyDevRuntime('com.docke')).toBe('docker');
     expect(classifyDevRuntime('docker-pr')).toBe('docker');
+    expect(classifyDevRuntime('OrbStack')).toBe('docker');
     expect(classifyDevRuntime('php')).toBe('php');
     expect(classifyDevRuntime('php-fpm')).toBe('php');
   });
