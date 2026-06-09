@@ -4,6 +4,7 @@ import type { LocalDevPort, MeshProfile } from '@kt-virtual-env/shared';
 import {
   classifyDevRuntime,
   deriveServiceName,
+  isSupportedDevRuntime,
   suggestMeshPortFromDiscovery,
 } from '@kt-virtual-env/shared';
 import { isLocalPortOpen } from './process-utils.js';
@@ -109,12 +110,19 @@ async function enrichServiceNames(rows: LocalDevPort[]): Promise<LocalDevPort[]>
       commandLine = await resolveCommandLine(row.pid);
       commandCache.set(row.pid, commandLine);
     }
+    const runtime = classifyDevRuntime(row.processName, commandLine);
     enriched.push({
       ...row,
-      serviceName: deriveServiceName(row.runtime, row.processName, commandLine),
+      runtime,
+      serviceName: deriveServiceName(runtime, row.processName, commandLine),
     });
   }
   return enriched;
+}
+
+async function finalizeDiscoveredPorts(rows: LocalDevPort[]): Promise<LocalDevPort[]> {
+  const enriched = await enrichServiceNames(dedupePorts(rows));
+  return enriched.filter((row) => isSupportedDevRuntime(row.runtime));
 }
 
 async function discoverDarwin(): Promise<LocalDevPort[]> {
@@ -126,8 +134,7 @@ async function discoverDarwin(): Promise<LocalDevPort[]> {
     const row = parseLsofListenLine(line);
     if (row) rows.push(row);
   }
-  const filtered = dedupePorts(rows.filter((r) => r.runtime !== 'other'));
-  return enrichServiceNames(filtered);
+  return finalizeDiscoveredPorts(rows);
 }
 // [/AI-GEN]
 
@@ -163,7 +170,7 @@ async function discoverWindows(): Promise<LocalDevPort[]> {
       pid,
     });
   }
-  return enrichServiceNames(dedupePorts(rows));
+  return finalizeDiscoveredPorts(rows);
 }
 
 export async function discoverLocalDevPorts(): Promise<LocalDevPort[]> {
@@ -184,7 +191,7 @@ export async function pickMeshLocalPort(
   const discovered = await discoverLocalDevPorts();
   const hit = suggestMeshPortFromDiscovery(profile, discovered, reserved);
   if (!hit) {
-    const runtimes = ['Java', 'Node', '.NET'].join(' / ');
+    const runtimes = 'Docker / Java / PHP / Node / C# / Go';
     throw new Error(
       `未检测到 ${runtimes} 本地监听端口，请先在本机启动应用。`,
     );

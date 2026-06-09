@@ -17,4 +17,12 @@ describe('parseLsofListenLine', () => {
     expect(row?.port).toBe(5173);
     expect(row?.runtime).toBe('node');
   });
+
+  it('parses docker-proxy listen line', () => {
+    const row = parseLsofListenLine(
+      'com.docke 20000 guoming  88u  IPv4 0x0  0t0  TCP *:3306 (LISTEN)',
+    );
+    expect(row?.port).toBe(3306);
+    expect(row?.runtime).toBe('docker');
+  });
 });

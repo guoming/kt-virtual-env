@@ -428,7 +428,7 @@ export function HomePage() {
         </div>
         {sortedLocalDevPorts.length === 0 && offlineFavoriteLocalPorts.length === 0 ? (
           <p className="mt-1 text-gray-600">
-            未检测到 Java / Node / .NET 监听端口。请先在本机启动应用后再转发。
+            未检测到 Docker / Java / PHP / Node / C# / Go 监听端口。请先在本机启动应用后再转发。
           </p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-2">

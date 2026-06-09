@@ -21,10 +21,21 @@ const profile: MeshProfile = {
 };
 
 describe('classifyDevRuntime', () => {
-  it('detects java and node', () => {
+  it('detects common dev runtimes from process name', () => {
     expect(classifyDevRuntime('java')).toBe('java');
     expect(classifyDevRuntime('node')).toBe('node');
     expect(classifyDevRuntime('dotnet')).toBe('dotnet');
+    expect(classifyDevRuntime('com.docke')).toBe('docker');
+    expect(classifyDevRuntime('docker-pr')).toBe('docker');
+    expect(classifyDevRuntime('php')).toBe('php');
+    expect(classifyDevRuntime('php-fpm')).toBe('php');
+  });
+
+  it('detects go and docker from command line', () => {
+    expect(classifyDevRuntime('main', 'go run ./cmd/api')).toBe('go');
+    expect(classifyDevRuntime('docker-pr', 'docker-proxy -proto tcp -host-ip 0.0.0.0')).toBe(
+      'docker',
+    );
   });
 });
 
@@ -46,6 +57,10 @@ describe('deriveServiceName', () => {
     expect(
       deriveServiceName('dotnet', 'dotnet', 'dotnet exec MyService.Api.dll'),
     ).toBe('MyService.Api');
+    expect(
+      deriveServiceName('php', 'php', 'php artisan serve --port=8000'),
+    ).toBe('laravel');
+    expect(deriveServiceName('go', 'go', 'go run ./cmd/gateway/main.go')).toBe('gateway');
   });
 });
 
@@ -151,6 +166,8 @@ describe('filterLocalDevPorts', () => {
 
   it('filters by runtime label', () => {
     expect(filterLocalDevPorts(ports, 'node').map((p) => p.port)).toEqual([3000]);
+    expect(filterLocalDevPorts(ports, 'java').map((p) => p.port)).toEqual([8080, 8888]);
+    expect(filterLocalDevPorts(ports, 'c#').map((p) => p.port)).toEqual([]);
   });
 });
 

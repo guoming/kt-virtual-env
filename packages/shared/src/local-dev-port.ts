@@ -1,7 +1,16 @@
 import type { MeshProfile } from './types.js';
 
 // [AI-GEN] scope:local-dev-port, model:auto, reviewed:false
-export type DevRuntime = 'java' | 'node' | 'dotnet' | 'other';
+export type DevRuntime = 'docker' | 'java' | 'php' | 'node' | 'dotnet' | 'go' | 'other';
+
+export const SUPPORTED_DEV_RUNTIMES: DevRuntime[] = [
+  'docker',
+  'java',
+  'php',
+  'node',
+  'dotnet',
+  'go',
+];
 
 export interface LocalDevPort {
   port: number;
@@ -13,8 +22,43 @@ export interface LocalDevPort {
   pid: number;
 }
 
-export function classifyDevRuntime(processName: string): DevRuntime {
+export function isSupportedDevRuntime(runtime: DevRuntime): boolean {
+  return SUPPORTED_DEV_RUNTIMES.includes(runtime);
+}
+
+export function classifyDevRuntime(processName: string, commandLine?: string): DevRuntime {
   const name = processName.toLowerCase();
+  const cmd = commandLine?.toLowerCase() ?? '';
+
+  if (
+    name.includes('docker') ||
+    name.includes('com.docke') ||
+    name.includes('docker-pr') ||
+    name.includes('vpnkit') ||
+    /\bdocker\s+(run|compose|proxy)\b/.test(cmd)
+  ) {
+    return 'docker';
+  }
+
+  if (
+    name === 'php' ||
+    name.startsWith('php-') ||
+    name.includes('php-fpm') ||
+    name.includes('php-cgi') ||
+    /\bphp\b/.test(cmd)
+  ) {
+    return 'php';
+  }
+
+  if (
+    name === 'go' ||
+    /\bgo\s+run\b/.test(cmd) ||
+    /\bgo-build\b/.test(cmd) ||
+    /\/\.cache\/go-build\//.test(cmd)
+  ) {
+    return 'go';
+  }
+
   if (
     name.includes('java') ||
     name === 'javaw' ||
@@ -24,6 +68,7 @@ export function classifyDevRuntime(processName: string): DevRuntime {
   ) {
     return 'java';
   }
+
   if (
     name === 'node' ||
     name.includes('node') ||
@@ -35,9 +80,18 @@ export function classifyDevRuntime(processName: string): DevRuntime {
   ) {
     return 'node';
   }
-  if (name.includes('dotnet') || name === 'dotnet' || name.includes('servicehub')) {
+
+  if (
+    name.includes('dotnet') ||
+    name === 'dotnet' ||
+    name.includes('servicehub') ||
+    name.includes('iisexpress') ||
+    name === 'w3wp' ||
+    name.includes('mono')
+  ) {
     return 'dotnet';
   }
+
   return 'other';
 }
 
@@ -47,7 +101,7 @@ function pathBaseName(filePath: string): string {
 }
 
 function stripKnownExt(name: string): string {
-  return name.replace(/\.(jar|dll|exe|js|ts|mjs|cjs)$/i, '');
+  return name.replace(/\.(jar|dll|exe|js|ts|mjs|cjs|go|php)$/i, '');
 }
 
 const GENERIC_SCRIPT_NAMES = new Set(['index', 'main', 'server', 'app', 'start', 'dev']);
@@ -68,9 +122,9 @@ function projectNameFromPath(filePath: string): string | undefined {
   const segments = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
   if (segments.length < 2) return undefined;
   for (let i = segments.length - 2; i >= 0; i--) {
-    const name = segments[i]!;
-    if (!GENERIC_DIR_NAMES.has(name.toLowerCase()) && !name.startsWith('.')) {
-      return name;
+    const seg = segments[i]!;
+    if (!GENERIC_DIR_NAMES.has(seg.toLowerCase()) && !seg.startsWith('.')) {
+      return seg;
     }
   }
   return undefined;
@@ -132,6 +186,46 @@ export function deriveServiceName(
     }
   }
 
+  if (runtime === 'php') {
+    const artisanMatch = cmd.match(/\bartisan\b/i);
+    if (artisanMatch) {
+      const project = projectNameFromPath(cmd);
+      if (project) return project;
+      return 'laravel';
+    }
+    const scriptMatch = cmd.match(/\bphp\s+(?:-S\s+\S+\s+)?["']?([^\s"']+\.php)/i);
+    if (scriptMatch?.[1]) {
+      const base = stripKnownExt(pathBaseName(scriptMatch[1]));
+      if (!GENERIC_SCRIPT_NAMES.has(base.toLowerCase())) return base;
+      const project = projectNameFromPath(scriptMatch[1]);
+      if (project) return project;
+    }
+  }
+
+  if (runtime === 'go') {
+    const goRunMatch = cmd.match(/\bgo\s+run\s+([^\s]+)/i);
+    if (goRunMatch?.[1]) {
+      const target = goRunMatch[1];
+      if (target.startsWith('./') || target.includes('/')) {
+        const base = stripKnownExt(pathBaseName(target));
+        if (!GENERIC_SCRIPT_NAMES.has(base.toLowerCase())) return base;
+        const project = projectNameFromPath(target);
+        if (project) return project;
+      }
+      return stripKnownExt(target);
+    }
+    const project = projectNameFromPath(cmd);
+    if (project) return project;
+  }
+
+  if (runtime === 'docker') {
+    const containerMatch = cmd.match(/(?:^|\s)(?:[^/\\]+:)?([^/\\:]+):/);
+    if (containerMatch?.[1] && !containerMatch[1].includes(' ')) {
+      return containerMatch[1];
+    }
+    if (processName.toLowerCase().includes('proxy')) return 'docker-proxy';
+  }
+
   return processName;
 }
 
@@ -170,12 +264,18 @@ export function formatLocalDevPortLabel(port: LocalDevPort): string {
 
 export function runtimeLabel(runtime: DevRuntime): string {
   switch (runtime) {
+    case 'docker':
+      return 'Docker';
     case 'java':
       return 'Java';
+    case 'php':
+      return 'PHP';
     case 'node':
       return 'Node';
     case 'dotnet':
-      return '.NET';
+      return 'C#';
+    case 'go':
+      return 'Go';
     default:
       return '其他';
   }
@@ -197,6 +297,7 @@ export function filterLocalDevPorts(ports: LocalDevPort[], query: string): Local
       d.serviceName,
       d.processName,
       runtimeLabel(d.runtime),
+      d.runtime,
     ].map((s) => s.toLowerCase());
     return tokens.every(
       (token) =>
