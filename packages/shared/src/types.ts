@@ -12,6 +12,8 @@ export interface Session {
   pid?: number;
   state: SessionState;
   startedAt: string;
+  /** 进入 running 状态的时间（用于 connect 健康检查宽限期） */
+  runningAt?: string;
   logs: string[];
   command: string;
 }

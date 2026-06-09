@@ -19,6 +19,7 @@ import { isLocalPortOpen, isProcessAlive } from './process-utils.js';
 const execFileAsync = promisify(execFile);
 
 const PROBE_RETRY = { attempts: 5, intervalMs: 1000 };
+const CONNECT_HEALTH_GRACE_MS = 60_000;
 
 function readPidFromKtDir(ktHome: string, nameHint: string): number | undefined {
   const pidDir = path.join(ktHome, '.kt', 'pid');
@@ -34,6 +35,50 @@ function readPidFromKtDir(ktHome: string, nameHint: string): number | undefined 
     }
   }
   return undefined;
+}
+
+async function probeKtctlConnectProcess(): Promise<{ ok: boolean; detail: string }> {
+  if (process.platform === 'win32') {
+    try {
+      const { stdout } = await execFileAsync(
+        'tasklist',
+        ['/FI', 'IMAGENAME eq ktctl.exe', '/NH'],
+        { timeout: 5000, windowsHide: true },
+      );
+      const ok = /ktctl\.exe/i.test(stdout);
+      return {
+        ok,
+        detail: ok ? '✓ 检测到 ktctl connect 进程' : '✗ 未检测到 ktctl.exe 进程',
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, detail: `✗ 进程探测失败：${msg}` };
+    }
+  }
+
+  try {
+    const { stdout } = await execFileAsync('pgrep', ['-f', 'ktctl connect'], { timeout: 5000 });
+    const pids = stdout
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((v) => Number.parseInt(v, 10))
+      .filter((pid) => pid > 0);
+    const ok = pids.length > 0;
+    return {
+      ok,
+      detail: ok
+        ? `✓ ktctl connect 进程存活 (pid ${pids.join(', ')})`
+        : '✗ 未找到 ktctl connect 进程',
+    };
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    if (err.code === 1) {
+      return { ok: false, detail: '✗ 未找到 ktctl connect 进程' };
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, detail: `✗ 进程探测失败：${msg}` };
+  }
 }
 
 async function probeClusterDns(namespace: string): Promise<{ ok: boolean; detail: string }> {
@@ -56,13 +101,26 @@ async function probeClusterDns(namespace: string): Promise<{ ok: boolean; detail
     if (!service) {
       return { ok: false, detail: `命名空间 ${namespace} 下无 Service，跳过 DNS 探测` };
     }
-    const host = `${service}.${namespace}`;
-    await dns.lookup(host);
-    return { ok: true, detail: `集群 DNS 可解析：${host}` };
+    const candidates = [`${service}.${namespace}`, `${service}.${namespace}.svc.cluster.local`];
+    for (const host of candidates) {
+      try {
+        await dns.lookup(host);
+        return { ok: true, detail: `集群 DNS 可解析：${host}` };
+      } catch {
+        // try next host pattern
+      }
+    }
+    return { ok: false, detail: `集群 DNS 解析失败：${candidates.join(' / ')}` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, detail: `集群 DNS 解析失败：${msg}` };
   }
+}
+
+function isWithinConnectGracePeriod(session: Session): boolean {
+  if (!session.runningAt) return false;
+  const elapsed = Date.now() - Date.parse(session.runningAt);
+  return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < CONNECT_HEALTH_GRACE_MS;
 }
 
 // [AI-GEN] scope:checkConnectHealth, model:auto, reviewed:false
@@ -93,6 +151,12 @@ export async function checkConnectHealth(
     return buildHealthResult('unknown', '集群网络未连接', []);
   }
 
+  if (isWithinConnectGracePeriod(connectSession)) {
+    return buildHealthResult('unknown', '集群网络连接稳定中', [
+      'connect 刚建立，等待路由与 DNS 生效…',
+    ]);
+  }
+
   let clusterLine = '✗ 集群连接失败';
   const clusterOk = await retryUntilPass(async () => {
     const cluster = await k8s.testConnection();
@@ -107,16 +171,19 @@ export async function checkConnectHealth(
   }
   details.push('✓ 组网 Helper 已运行');
 
-  let connectPidLine = '✗ 未找到存活的 ktctl connect 进程';
-  const connectPidOk = await retryUntilPass(async () => {
+  let connectProcLine = '✗ 未找到存活的 ktctl connect 进程';
+  const connectProcOk = await retryUntilPass(async () => {
+    const proc = await probeKtctlConnectProcess();
+    connectProcLine = proc.detail;
+    if (proc.ok) return true;
     const connectPid = readPidFromKtDir(getElevatedKtHome(), 'connect');
     if (connectPid) {
-      connectPidLine = `✓ ktctl connect 进程存活 (pid ${connectPid})`;
+      connectProcLine = `✓ ktctl connect 进程存活 (pid ${connectPid})`;
       return true;
     }
     return false;
   }, PROBE_RETRY);
-  details.push(connectPidLine);
+  details.push(connectProcLine);
 
   const cfg = loadConfig();
   const dnsNs =
@@ -126,17 +193,21 @@ export async function checkConnectHealth(
   let dnsLine = '✗ 集群 DNS 解析失败';
   const dnsOk = await retryUntilPass(async () => {
     const dnsResult = await probeClusterDns(dnsNs);
-    dnsLine = dnsResult.ok ? `✓ ${dnsResult.detail}` : `✗ ${dnsResult.detail}`;
+    dnsLine = dnsResult.ok ? `✓ ${dnsResult.detail}` : `○ ${dnsResult.detail}`;
     return dnsResult.ok;
   }, PROBE_RETRY);
   details.push(dnsLine);
 
-  const checks = [clusterOk, helperRunning, connectPidOk, dnsOk];
-  const passCount = checks.filter(Boolean).length;
-
-  if (passCount === checks.length) {
-    return buildHealthResult('healthy', '集群网络连接正常', details);
+  const coreOk = clusterOk && helperRunning && connectProcOk;
+  if (coreOk) {
+    return buildHealthResult(
+      'healthy',
+      dnsOk ? '集群网络连接正常' : '集群网络连接正常（DNS 尚未就绪）',
+      details,
+    );
   }
+
+  const passCount = [clusterOk, helperRunning, connectProcOk, dnsOk].filter(Boolean).length;
   if (passCount >= 2) {
     return buildHealthResult('degraded', '集群网络部分异常', details);
   }
@@ -220,3 +291,5 @@ export async function checkSessionsHealth(
   );
   return out;
 }
+
+export { CONNECT_HEALTH_GRACE_MS, isWithinConnectGracePeriod };

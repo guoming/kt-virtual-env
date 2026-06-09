@@ -34,7 +34,9 @@ func HandleConnect(ktctlPath string, args []string, ktHome string, onLog func(li
 	}
 	connectCmd = exec.Command(ktctlPath, args...)
 	if ktHome != "" {
-		_ = os.MkdirAll(filepath.Join(ktHome, ".kt", "pid"), 0o755)
+		pidDir := filepath.Join(ktHome, ".kt", "pid")
+		_ = os.MkdirAll(pidDir, 0o777)
+		_ = os.Chmod(pidDir, 0o777)
 		connectCmd.Env = append(withoutHome(os.Environ()), "HOME="+ktHome)
 	}
 	stdout, err := connectCmd.StdoutPipe()

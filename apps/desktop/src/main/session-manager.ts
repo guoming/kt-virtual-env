@@ -55,7 +55,7 @@ export class SessionManager {
   }
 
   markRunning(id: string, pid: number): void {
-    this.patch(id, { state: 'running', pid });
+    this.patch(id, { state: 'running', pid, runningAt: new Date().toISOString() });
   }
 
   markFailed(id: string): void {
