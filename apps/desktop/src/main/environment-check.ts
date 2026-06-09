@@ -8,6 +8,7 @@ import { findBundledBinary, findHelperPath } from './binary-resolver.js';
 import { fetchLatestAppVersion } from './app-release-check.js';
 import { loadBundledVersions } from './bundled-versions.js';
 import { isHelperRunning } from './helper-launcher.js';
+import { getHelperLogPath } from './helper-log.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -76,12 +77,16 @@ async function checkHelper(): Promise<ComponentCheck & { running: boolean }> {
   }
   const running = await isHelperRunning();
   if (!running) {
+    const logHint =
+      process.platform === 'win32' || process.platform === 'darwin'
+        ? `，失败时可查看日志：${getHelperLogPath()}`
+        : '';
     return {
       ok: false,
       path,
       running: false,
       message: '待授权',
-      hint: '点击「授权组网」，在系统弹窗中确认管理员权限（仅网络连接需要）',
+      hint: `点击「授权组网」，在系统弹窗中确认管理员权限（仅网络连接需要）${logHint}`,
     };
   }
   return {
