@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ensurePathWritable, isPathWritable } from './path-ownership.js';
+import { runtimeUserKey } from './runtime-user-key.js';
 
 /** 提权 connect 使用的 HOME，避免 root 污染用户 ~/.kt */
 export function getElevatedKtHome(): string {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
-  return path.join(os.tmpdir(), `kt-virtual-env-kt-elevated-${uid}`);
+  return path.join(os.tmpdir(), `kt-virtual-env-kt-elevated-${runtimeUserKey()}`);
 }
 
 export function getUserKtDir(): string {

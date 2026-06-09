@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { runtimeUserKey } from './runtime-user-key.js';
 
 function stagingPath(name: string): string {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : '0';
-  return path.join(os.tmpdir(), `kt-virtual-env-${name}-${uid}`);
+  return path.join(os.tmpdir(), `kt-virtual-env-${name}-${runtimeUserKey()}`);
 }
 
-/** root 进程无法读取用户主目录下的文件，复制 kubeconfig 到 /tmp */
+/** root 进程无法读取用户主目录下的文件，复制 kubeconfig 到临时目录 */
 export function stageKubeconfigForElevated(sourcePath: string): string {
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`kubeconfig 不存在: ${sourcePath}`);
@@ -18,13 +18,16 @@ export function stageKubeconfigForElevated(sourcePath: string): string {
   return dest;
 }
 
-/** 复制 ktctl 到 /tmp 并赋予执行权限 */
+/** 复制 ktctl 到临时目录；Windows 须保留 .exe 后缀 */
 export function stageKtctlForElevated(sourcePath: string): string {
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`ktctl 不存在: ${sourcePath}`);
   }
-  const dest = stagingPath('ktctl');
+  const ext = path.extname(sourcePath);
+  const dest = path.join(os.tmpdir(), `kt-virtual-env-ktctl-${runtimeUserKey()}${ext}`);
   fs.copyFileSync(sourcePath, dest);
-  fs.chmodSync(dest, 0o755);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(dest, 0o755);
+  }
   return dest;
 }

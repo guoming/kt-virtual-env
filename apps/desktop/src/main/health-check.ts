@@ -78,7 +78,7 @@ export async function checkConnectHealth(
   }
 
   if (connectSession.state === 'starting' || connectSession.state === 'pending') {
-    return buildHealthResult('degraded', '集群网络连接建立中', [
+    return buildHealthResult('unknown', '集群网络连接建立中', [
       `会话状态：${connectSession.state}`,
     ]);
   }
@@ -159,7 +159,7 @@ export async function checkSessionHealth(
       : `端口转发 ${session.target}`;
 
   if (session.state === 'starting' || session.state === 'pending') {
-    return buildHealthResult('degraded', `${label} 启动中`, [
+    return buildHealthResult('unknown', `${label} 启动中`, [
       `会话状态：${session.state}`,
     ]);
   }

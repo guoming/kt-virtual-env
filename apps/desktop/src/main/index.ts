@@ -151,7 +151,14 @@ async function startConnectSession(params: ConnectParams): Promise<string> {
     session.id,
     `[connect] 正在连接集群网络（${params.namespace}）…`,
   );
-  await launchConnectHelper(session.id, params);
+  try {
+    await launchConnectHelper(session.id, params);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    sessions.markFailed(session.id);
+    sessions.appendLog(session.id, `[connect] 连接失败：${msg}`);
+    throw e;
+  }
   return session.id;
 }
 
@@ -163,8 +170,14 @@ async function restartConnectSession(params: ConnectParams): Promise<void> {
       '[auto-recovery] 健康检查连续 2 次异常，正在自动重连…',
     );
     sessions.markStarting(existingId);
-    await disconnectConnectHelper();
-    await launchConnectHelper(existingId, params);
+    try {
+      await disconnectConnectHelper();
+      await launchConnectHelper(existingId, params);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      sessions.markFailed(existingId);
+      sessions.appendLog(existingId, `[connect] 自动重连失败：${msg}`);
+    }
     return;
   }
   await startConnectSession(params);
