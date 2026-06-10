@@ -29,4 +29,23 @@ describe('stageKtctlForElevated', () => {
     expect(staged.endsWith('.exe')).toBe(true);
     expect(fs.existsSync(staged)).toBe(true);
   });
+
+  it('copies wintun.dll alongside staged ktctl on Windows', () => {
+    if (process.platform !== 'win32') return;
+
+    const sourceDir = path.join(os.tmpdir(), `ktve-src-dir-${process.pid}`);
+    fs.mkdirSync(sourceDir, { recursive: true });
+    const source = path.join(sourceDir, 'ktctl.exe');
+    const wintun = path.join(sourceDir, 'wintun.dll');
+    fs.writeFileSync(source, 'fake-ktctl');
+    fs.writeFileSync(wintun, 'fake-wintun');
+    tmpFiles.push(source, wintun);
+
+    const staged = stageKtctlForElevated(source);
+    tmpFiles.push(staged);
+    const stagedWintun = path.join(path.dirname(staged), 'wintun.dll');
+    tmpFiles.push(stagedWintun);
+
+    expect(fs.existsSync(stagedWintun)).toBe(true);
+  });
 });

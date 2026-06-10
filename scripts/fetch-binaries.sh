@@ -84,6 +84,9 @@ download_ktctl() {
     if curl_download "$url" "$tmp/ktctl.zip"; then
       unzip -q "$tmp/ktctl.zip" -d "$tmp"
       install -m 755 "$tmp/ktctl.exe" "$dest/ktctl.exe"
+      if [[ -f "$tmp/wintun.dll" ]]; then
+        install -m 755 "$tmp/wintun.dll" "$dest/wintun.dll"
+      fi
       ok=1
     elif copy_from_path ktctl.exe "$dest/ktctl.exe"; then
       ok=1

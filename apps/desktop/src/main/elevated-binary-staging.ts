@@ -18,7 +18,7 @@ export function stageKubeconfigForElevated(sourcePath: string): string {
   return dest;
 }
 
-/** 复制 ktctl 到临时目录；Windows 须保留 .exe 后缀 */
+/** 复制 ktctl 到临时目录；Windows 须保留 .exe 后缀，并同步 wintun.dll */
 export function stageKtctlForElevated(sourcePath: string): string {
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`ktctl 不存在: ${sourcePath}`);
@@ -28,6 +28,19 @@ export function stageKtctlForElevated(sourcePath: string): string {
   fs.copyFileSync(sourcePath, dest);
   if (process.platform !== 'win32') {
     fs.chmodSync(dest, 0o755);
+  } else {
+    stageWintunDllForElevated(path.dirname(sourcePath), path.dirname(dest));
   }
   return dest;
+}
+
+function stageWintunDllForElevated(sourceDir: string, destDir: string): void {
+  const wintunSource = path.join(sourceDir, 'wintun.dll');
+  if (!fs.existsSync(wintunSource)) {
+    throw new Error(
+      `wintun.dll 不存在: ${wintunSource}（Windows Connect 需要，请执行 pnpm fetch-binaries windows-amd64）`,
+    );
+  }
+  const wintunDest = path.join(destDir, 'wintun.dll');
+  fs.copyFileSync(wintunSource, wintunDest);
 }

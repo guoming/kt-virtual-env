@@ -1,6 +1,7 @@
 // [AI-GEN] scope:environment-check, model:auto, reviewed:false
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
 import type { ComponentCheck, EnvironmentStatus } from '@kt-virtual-env/shared';
@@ -47,6 +48,18 @@ async function checkCliTool(tool: 'ktctl' | 'kubectl'): Promise<ComponentCheck> 
       message: `${tool} 无法执行`,
       hint: '请重新下载二进制：pnpm fetch-binaries',
     };
+  }
+  if (tool === 'ktctl' && process.platform === 'win32') {
+    const wintunPath = path.join(path.dirname(path), 'wintun.dll');
+    if (!fs.existsSync(wintunPath)) {
+      return {
+        ok: false,
+        path,
+        version,
+        message: 'wintun.dll 缺失',
+        hint: 'Windows Connect 需要 wintun.dll，请执行：pnpm fetch-binaries windows-amd64',
+      };
+    }
   }
   return {
     ok: true,

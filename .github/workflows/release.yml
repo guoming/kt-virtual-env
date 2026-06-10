@@ -130,6 +130,7 @@ jobs:
         run: |
           ./resources/bin/windows-amd64/ktctl.exe --version
           ./resources/bin/windows-amd64/kubectl.exe version --client
+          test -f ./resources/bin/windows-amd64/wintun.dll
 
       - name: Build privileged helper
         env:
