@@ -19,9 +19,16 @@ describe('stageKtctlForElevated', () => {
   });
 
   it('preserves .exe suffix on Windows staging paths', () => {
-    const source = path.join(os.tmpdir(), `ktve-src-${process.pid}.exe`);
+    const sourceDir = path.join(os.tmpdir(), `ktve-src-dir-${process.pid}`);
+    fs.mkdirSync(sourceDir, { recursive: true });
+    const source = path.join(sourceDir, 'ktctl.exe');
     fs.writeFileSync(source, 'fake');
     tmpFiles.push(source);
+    if (process.platform === 'win32') {
+      const wintun = path.join(sourceDir, 'wintun.dll');
+      fs.writeFileSync(wintun, 'fake-wintun');
+      tmpFiles.push(wintun);
+    }
 
     const staged = stageKtctlForElevated(source);
     tmpFiles.push(staged);
@@ -30,9 +37,7 @@ describe('stageKtctlForElevated', () => {
     expect(fs.existsSync(staged)).toBe(true);
   });
 
-  it('copies wintun.dll alongside staged ktctl on Windows', () => {
-    if (process.platform !== 'win32') return;
-
+  it.skipIf(process.platform !== 'win32')('copies wintun.dll alongside staged ktctl on Windows', () => {
     const sourceDir = path.join(os.tmpdir(), `ktve-src-dir-${process.pid}`);
     fs.mkdirSync(sourceDir, { recursive: true });
     const source = path.join(sourceDir, 'ktctl.exe');

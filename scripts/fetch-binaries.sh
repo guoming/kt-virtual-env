@@ -84,11 +84,25 @@ download_ktctl() {
     if curl_download "$url" "$tmp/ktctl.zip"; then
       unzip -q "$tmp/ktctl.zip" -d "$tmp"
       install -m 755 "$tmp/ktctl.exe" "$dest/ktctl.exe"
-      if [[ -f "$tmp/wintun.dll" ]]; then
-        install -m 755 "$tmp/wintun.dll" "$dest/wintun.dll"
+      if [[ ! -f "$tmp/wintun.dll" ]]; then
+        echo "wintun.dll missing in ktctl Windows zip: $url" >&2
+        rm -rf "$tmp"
+        return 1
       fi
+      install -m 755 "$tmp/wintun.dll" "$dest/wintun.dll"
       ok=1
     elif copy_from_path ktctl.exe "$dest/ktctl.exe"; then
+      local ktctl_src
+      ktctl_src="$(command -v ktctl.exe 2>/dev/null || true)"
+      if [[ -n "$ktctl_src" ]]; then
+        local wintun_src="${ktctl_src%/*}/wintun.dll"
+        if [[ -f "$wintun_src" ]]; then
+          install -m 755 "$wintun_src" "$dest/wintun.dll"
+        else
+          echo "wintun.dll not found next to local ktctl.exe: $wintun_src" >&2
+          return 1
+        fi
+      fi
       ok=1
     fi
   else

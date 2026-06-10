@@ -24,54 +24,54 @@ async function probeCliVersion(bin: string, tool: 'ktctl' | 'kubectl'): Promise<
 }
 
 async function checkCliTool(tool: 'ktctl' | 'kubectl'): Promise<ComponentCheck> {
-  const path = findBundledBinary(tool);
-  if (!path) {
+  const binPath = findBundledBinary(tool);
+  if (!binPath) {
     return {
       ok: false,
       message: `${tool} 未安装`,
       hint: '在项目根目录执行：pnpm fetch-binaries',
     };
   }
-  if (!fs.existsSync(path)) {
+  if (!fs.existsSync(binPath)) {
     return {
       ok: false,
-      path,
+      path: binPath,
       message: `${tool} 文件不存在`,
       hint: '在项目根目录执行：pnpm fetch-binaries',
     };
   }
-  const version = await probeCliVersion(path, tool);
+  const version = await probeCliVersion(binPath, tool);
   if (!version) {
     return {
       ok: false,
-      path,
+      path: binPath,
       message: `${tool} 无法执行`,
       hint: '请重新下载二进制：pnpm fetch-binaries',
     };
   }
   if (tool === 'ktctl' && process.platform === 'win32') {
-    const wintunPath = path.join(path.dirname(path), 'wintun.dll');
+    const wintunPath = path.join(path.dirname(binPath), 'wintun.dll');
     if (!fs.existsSync(wintunPath)) {
       return {
         ok: false,
-        path,
+        path: binPath,
         version,
         message: 'wintun.dll 缺失',
-        hint: 'Windows Connect 需要 wintun.dll，请执行：pnpm fetch-binaries windows-amd64',
+        hint: 'Windows Connect 需要 wintun.dll，请重新安装最新版本应用',
       };
     }
   }
   return {
     ok: true,
-    path,
+    path: binPath,
     version,
     message: '已就绪',
   };
 }
 
 async function checkHelper(): Promise<ComponentCheck & { running: boolean }> {
-  const path = findHelperPath();
-  if (!path) {
+  const helperPath = findHelperPath();
+  if (!helperPath) {
     return {
       ok: false,
       running: false,
@@ -79,10 +79,10 @@ async function checkHelper(): Promise<ComponentCheck & { running: boolean }> {
       hint: '开发环境请执行 pnpm build:helper，完成后点击「重新检测」',
     };
   }
-  if (!fs.existsSync(path)) {
+  if (!fs.existsSync(helperPath)) {
     return {
       ok: false,
-      path,
+      path: helperPath,
       running: false,
       message: '组件未安装',
       hint: '开发环境请执行 pnpm build:helper，完成后点击「重新检测」',
@@ -96,7 +96,7 @@ async function checkHelper(): Promise<ComponentCheck & { running: boolean }> {
         : '';
     return {
       ok: false,
-      path,
+      path: helperPath,
       running: false,
       message: '待授权',
       hint: `点击「授权组网」，在系统弹窗中确认管理员权限（仅网络连接需要）${logHint}`,
@@ -104,7 +104,7 @@ async function checkHelper(): Promise<ComponentCheck & { running: boolean }> {
   }
   return {
     ok: true,
-    path,
+    path: helperPath,
     running: true,
     message: '已授权，可进行网络连接',
   };

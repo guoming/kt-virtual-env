@@ -38,7 +38,7 @@ function stageWintunDllForElevated(sourceDir: string, destDir: string): void {
   const wintunSource = path.join(sourceDir, 'wintun.dll');
   if (!fs.existsSync(wintunSource)) {
     throw new Error(
-      `wintun.dll 不存在: ${wintunSource}（Windows Connect 需要，请执行 pnpm fetch-binaries windows-amd64）`,
+      `wintun.dll 不存在: ${wintunSource}（Windows Connect 需要，请重新安装最新版本应用）`,
     );
   }
   const wintunDest = path.join(destDir, 'wintun.dll');

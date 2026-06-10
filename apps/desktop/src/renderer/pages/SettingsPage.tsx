@@ -68,6 +68,7 @@ export function SettingsPage() {
       const status = await requireKtveApi().app.checkEnvironment();
       setEnv(status);
       setHelperRunning(status.helper.running);
+      setEnvMessage('');
     } catch (e) {
       setEnvMessage(e instanceof Error ? e.message : String(e));
     } finally {
