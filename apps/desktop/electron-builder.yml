@@ -14,6 +14,7 @@ mac:
     - zip
   category: public.app-category.developer-tools
   artifactName: kt-virtual-env-${version}-mac-${arch}.${ext}
+  gatekeeperAssess: false
   extendInfo:
     CFBundleDisplayName: Kubernetes 虚拟环境工作台
     CFBundleName: kt-virtual-env

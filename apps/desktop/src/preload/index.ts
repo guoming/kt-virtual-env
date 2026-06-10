@@ -44,7 +44,14 @@ export interface KtveApi {
     listContexts: () => Promise<string[]>;
     testConnection: () => Promise<{ ok: boolean; message: string }>;
   };
-  mesh: { start: (profile: MeshProfile, localPort: number, userId?: string) => Promise<string> };
+  mesh: {
+    start: (
+      profile: MeshProfile,
+      localPort: number,
+      userId?: string,
+      versionMarkBaseVirtualEnv?: string,
+    ) => Promise<string>;
+  };
   forward: { start: (params: ForwardParams) => Promise<string> };
   connect: {
     start: (params: ConnectParams) => Promise<string>;
@@ -148,8 +155,8 @@ const api: KtveApi = {
     testConnection: () => ipcRenderer.invoke('k8s:testConnection'),
   },
   mesh: {
-    start: (profile, localPort, userId) =>
-      ipcRenderer.invoke('mesh:start', profile, localPort, userId),
+    start: (profile, localPort, userId, versionMarkBaseVirtualEnv) =>
+      ipcRenderer.invoke('mesh:start', profile, localPort, userId, versionMarkBaseVirtualEnv),
   },
   forward: { start: (params) => ipcRenderer.invoke('forward:start', params) },
   connect: {

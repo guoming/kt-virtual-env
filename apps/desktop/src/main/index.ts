@@ -389,14 +389,20 @@ function registerIpc(): void {
   });
   ipcMain.handle(
     'mesh:start',
-    async (_e, profile: MeshProfile, localPort: number, userId?: string) => {
+    async (
+      _e,
+      profile: MeshProfile,
+      localPort: number,
+      userId?: string,
+      versionMarkBaseVirtualEnv?: string,
+    ) => {
       await ensureUserKtReady();
       const cfg = loadConfig();
       const id = (userId ?? cfg.meshUserId).trim();
       if (!id) {
         throw new Error('请先在配置页填写个人标识');
       }
-      return ktctlService.startMesh(profile, localPort, id);
+      return ktctlService.startMesh(profile, localPort, id, versionMarkBaseVirtualEnv);
     },
   );
 

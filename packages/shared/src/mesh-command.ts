@@ -28,8 +28,9 @@ export function buildMeshCommand(
   profile: MeshProfile,
   localPort: number,
   userId: string,
+  versionMarkBaseVirtualEnv = profile.virtualEnv,
 ): MeshCommand {
-  const meshVersion = buildMeshVersion(profile.virtualEnv, userId);
+  const meshVersion = buildMeshVersion(versionMarkBaseVirtualEnv, userId);
   const selector = [
     `app.kubernetes.io/env=${profile.env}`,
     `app.kubernetes.io/name=${profile.appName}`,

@@ -14,7 +14,10 @@ export class ProcessRunner extends EventEmitter {
   private killTimer?: NodeJS.Timeout;
 
   start(bin: string, args: string[], env?: Record<string, string>): void {
-    this.proc = spawn(bin, args, { env: { ...process.env, ...env } });
+    this.proc = spawn(bin, args, {
+      env: { ...process.env, ...env },
+      windowsHide: true,
+    });
     this.proc.stdout?.on('data', (d) => this.emit('log', d.toString()));
     this.proc.stderr?.on('data', (d) => this.emit('log', d.toString()));
     this.proc.on('exit', (code, signal) => this.emit('exit', { code, signal } satisfies RunResult));

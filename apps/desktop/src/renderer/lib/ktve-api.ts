@@ -47,7 +47,14 @@ export interface KtveApi {
     listContexts: () => Promise<string[]>;
     testConnection: () => Promise<{ ok: boolean; message: string }>;
   };
-  mesh: { start: (profile: MeshProfile, localPort: number, userId?: string) => Promise<string> };
+  mesh: {
+    start: (
+      profile: MeshProfile,
+      localPort: number,
+      userId?: string,
+      versionMarkBaseVirtualEnv?: string,
+    ) => Promise<string>;
+  };
   forward: { start: (params: ForwardParams) => Promise<string> };
   connect: {
     start: (params: ConnectParams) => Promise<string>;

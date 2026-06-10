@@ -36,6 +36,7 @@ const repoRoot = path.join(__dirname, '../..');
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   extends: 'electron-builder.yml',
+  afterPack: path.join(__dirname, 'scripts/macos-adhoc-sign.cjs'),
   extraResources: [
     {
       from: path.join(repoRoot, 'resources/bin', resourcePlatform),

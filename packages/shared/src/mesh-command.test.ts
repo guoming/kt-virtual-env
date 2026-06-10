@@ -39,6 +39,15 @@ describe('buildMeshCommand', () => {
     expect(cmd.args).toContain('--useShadowDeployment');
   });
 
+  it('uses selected base virtual-env for version mark while targeting service virtual-env', () => {
+    const cmd = buildMeshCommand(profile, 8001, 'guoming', 'dev.v1');
+    expect(cmd.args).toContain('virtual-env:dev.v1.guoming');
+    expect(cmd.meshVersion).toBe('dev.v1.guoming');
+
+    const selector = cmd.args[cmd.args.indexOf('-l') + 1];
+    expect(selector).toContain('virtual-env=dev.v2.zt07905');
+  });
+
   it('uses appName as mesh target when deployment has version suffix', () => {
     const versioned: MeshProfile = {
       deploymentName: 'bms-goods-server-v1',

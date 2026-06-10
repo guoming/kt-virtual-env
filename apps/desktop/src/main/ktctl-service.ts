@@ -30,14 +30,24 @@ export class KtctlService {
     return sessionId;
   }
 
-  startMesh(profile: MeshProfile, localPort: number, userId: string): string {
-    const { args, display, meshVersion } = this.buildMeshArgs(profile, localPort, userId);
+  startMesh(
+    profile: MeshProfile,
+    localPort: number,
+    userId: string,
+    versionMarkBaseVirtualEnv?: string,
+  ): string {
+    const { args, display, meshVersion } = this.buildMeshArgs(
+      profile,
+      localPort,
+      userId,
+      versionMarkBaseVirtualEnv,
+    );
     const sessionId = this.spawnKtctl('mesh', meshTargetName(profile), profile.namespace, args, {
       localPort,
       virtualEnv: meshVersion,
       commandOverride: display,
     });
-    this.registry.setMesh(sessionId, profile, localPort, userId);
+    this.registry.setMesh(sessionId, profile, localPort, userId, versionMarkBaseVirtualEnv);
     return sessionId;
   }
 
@@ -55,9 +65,19 @@ export class KtctlService {
     return args;
   }
 
-  private buildMeshArgs(profile: MeshProfile, localPort: number, userId: string) {
+  private buildMeshArgs(
+    profile: MeshProfile,
+    localPort: number,
+    userId: string,
+    versionMarkBaseVirtualEnv?: string,
+  ) {
     const cfg = loadConfig();
-    const { args, display, meshVersion } = buildMeshCommand(profile, localPort, userId);
+    const { args, display, meshVersion } = buildMeshCommand(
+      profile,
+      localPort,
+      userId,
+      versionMarkBaseVirtualEnv,
+    );
     args.push('--kubeconfig', cfg.kubeconfig);
     if (cfg.context) args.push('--context', cfg.context);
     return { args, display, meshVersion };
@@ -165,7 +185,12 @@ export class KtctlService {
     const args =
       spec.type === 'forward'
         ? this.buildForwardArgs(spec.params)
-        : this.buildMeshArgs(spec.profile, spec.localPort, spec.userId).args;
+        : this.buildMeshArgs(
+            spec.profile,
+            spec.localPort,
+            spec.userId,
+            spec.versionMarkBaseVirtualEnv,
+          ).args;
 
     this.startRunner(sessionId, args);
   }
@@ -198,7 +223,7 @@ export class KtctlService {
     const cfg = loadConfig();
     const args = ['recover', target, '--namespace', namespace, '--kubeconfig', cfg.kubeconfig];
     if (cfg.context) args.push('--context', cfg.context);
-    await execFileAsync(ktctl, args);
+    await execFileAsync(ktctl, args, { windowsHide: true });
   }
 
   async clean(): Promise<void> {
@@ -206,7 +231,7 @@ export class KtctlService {
     const cfg = loadConfig();
     const args = ['clean', '--kubeconfig', cfg.kubeconfig];
     if (cfg.context) args.push('--context', cfg.context);
-    await execFileAsync(ktctl, args);
+    await execFileAsync(ktctl, args, { windowsHide: true });
   }
 
   async isProcessRunning(id: string): Promise<boolean> {

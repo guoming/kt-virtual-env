@@ -5,6 +5,7 @@ export type MeshRestartSpec = {
   profile: MeshProfile;
   localPort: number;
   userId: string;
+  versionMarkBaseVirtualEnv?: string;
 };
 
 export type ForwardRestartSpec = { type: 'forward'; params: ForwardParams };
@@ -36,8 +37,20 @@ export class RestartSpecRegistry {
     return spec?.type === 'forward' ? spec.params : undefined;
   }
 
-  setMesh(id: string, profile: MeshProfile, localPort: number, userId: string): void {
-    this.sessions.set(id, { type: 'mesh', profile, localPort, userId });
+  setMesh(
+    id: string,
+    profile: MeshProfile,
+    localPort: number,
+    userId: string,
+    versionMarkBaseVirtualEnv?: string,
+  ): void {
+    this.sessions.set(id, {
+      type: 'mesh',
+      profile,
+      localPort,
+      userId,
+      versionMarkBaseVirtualEnv,
+    });
   }
 
   getSession(id: string): SessionRestartSpec | undefined {
