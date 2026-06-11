@@ -5,7 +5,10 @@ export function isProcessAlive(pid: number | undefined): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    // 提权 Helper 启动的 ktctl 属 root，普通用户 kill(0) 会 EPERM，但进程仍存活
+    if (err.code === 'EPERM') return true;
     return false;
   }
 }

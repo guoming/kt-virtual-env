@@ -43,6 +43,7 @@ export function ConnectPage() {
   const [message, setMessage] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [loadingNamespaces, setLoadingNamespaces] = useState(true);
+  const [clusterApiUnreachable, setClusterApiUnreachable] = useState(false);
 
   const connectSession = useMemo(
     () =>
@@ -87,31 +88,50 @@ export function ConnectPage() {
     refresh: refreshHealth,
   } = useHealthPolling(selectConnect, true);
 
+  const applyNamespaceSelection = useCallback(
+    (access: NamespaceConnectAccess[], cfg: { connectDnsNamespaces: string[] }) => {
+      setNamespaceAccess(access);
+      const defaultBase = pickDefaultBaseNamespace(
+        access,
+        cfg.connectDnsNamespaces[0] ?? connectSession?.namespace,
+      );
+      setBaseNs(defaultBase);
+      const dnsDefaults = cfg.connectDnsNamespaces.length > 0
+        ? cfg.connectDnsNamespaces.filter((ns) => access.some((row) => row.name === ns))
+        : access.map((row) => row.name);
+      setSelected(new Set(dnsDefaults.length > 0 ? dnsDefaults : access.map((row) => row.name)));
+    },
+    [connectSession?.namespace],
+  );
+
   useEffect(() => {
     setLoadingNamespaces(true);
-    void Promise.all([
-      requireKtveApi().k8s.listConnectNamespaceAccess(),
-      requireKtveApi().config.get(),
-    ])
-      .then(([access, cfg]) => {
-        setNamespaceAccess(access);
-        const defaultBase = pickDefaultBaseNamespace(
-          access,
-          cfg.connectDnsNamespaces[0] ?? connectSession?.namespace,
-        );
-        setBaseNs(defaultBase);
-        const dnsDefaults = cfg.connectDnsNamespaces.length > 0
-          ? cfg.connectDnsNamespaces.filter((ns) => access.some((row) => row.name === ns))
-          : access.map((row) => row.name);
-        setSelected(new Set(dnsDefaults.length > 0 ? dnsDefaults : access.map((row) => row.name)));
-      })
-      .catch((e) => {
-        setMessage(e instanceof Error ? e.message : String(e));
+    setClusterApiUnreachable(false);
+    void requireKtveApi()
+      .config.get()
+      .then(async (cfg) => {
+        try {
+          const access = await requireKtveApi().k8s.listConnectNamespaceAccess();
+          applyNamespaceSelection(access, cfg);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          const saved = cfg.connectDnsNamespaces;
+          if (saved.length > 0) {
+            const fallback = saved.map((name) => ({ name, canConnect: true }));
+            applyNamespaceSelection(fallback, cfg);
+            setClusterApiUnreachable(true);
+            setMessage(
+              `${msg}。已使用上次保存的命名空间，连接前请确认网络可达。`,
+            );
+            return;
+          }
+          setMessage(msg);
+        }
       })
       .finally(() => {
         setLoadingNamespaces(false);
       });
-  }, [connectSession?.namespace]);
+  }, [applyNamespaceSelection, connectSession?.namespace]);
 
   useEffect(() => {
     if (connectSession?.state === 'running') {
@@ -134,10 +154,12 @@ export function ConnectPage() {
     setMessage('');
     try {
       const cfg = await requireKtveApi().config.get();
-      const access = await requireKtveApi().k8s.checkConnectNamespaceAccess(baseNs);
-      if (!access.canConnect) {
-        setMessage(`基准命名空间 ${baseNs} 权限不足：${access.reason ?? '请更换命名空间'}`);
-        return;
+      if (!clusterApiUnreachable) {
+        const access = await requireKtveApi().k8s.checkConnectNamespaceAccess(baseNs);
+        if (!access.canConnect) {
+          setMessage(`基准命名空间 ${baseNs} 权限不足：${access.reason ?? '请更换命名空间'}`);
+          return;
+        }
       }
       await requireKtveApi().connect.start({
         namespace: baseNs,
@@ -236,6 +258,12 @@ export function ConnectPage() {
           ))}
         </div>
       </div>
+
+      {clusterApiUnreachable && (
+        <p className="text-xs text-amber-700">
+          当前无法访问集群 API，命名空间列表来自上次连接记录。请确认已接入内网或 VPN 后再连接。
+        </p>
+      )}
 
       <p className="text-xs text-amber-700">
         连接前请先在配置页完成「组网授权」；若尚未授权，连接时会再次请求管理员确认。

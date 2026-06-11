@@ -10,7 +10,6 @@ import {
 } from '@kt-virtual-env/shared';
 import { FavoriteStarButton } from '../components/FavoriteStarButton';
 import { LocalDevPortPicker } from '../components/LocalDevPortPicker';
-import { MeshBaseVirtualEnvPicker } from '../components/MeshBaseVirtualEnvPicker';
 import { HealthDot, HealthStatusPanel } from '../components/HealthStatusPanel';
 import { ServiceListTabs, type ServiceListTab } from '../components/ServiceListTabs';
 import { useLocalDevPortFavorites } from '../hooks/use-local-dev-port-favorites';
@@ -58,10 +57,6 @@ function VirtualEnvBadge({ value, size = 'md' }: { value: string; size?: 'md' | 
   );
 }
 
-async function copyVersionValue(virtualEnv: string): Promise<void> {
-  await navigator.clipboard.writeText(virtualEnv);
-}
-
 function previewMeshVersion(base: string, userId: string): string | null {
   try {
     return buildMeshVersion(base, userId);
@@ -81,7 +76,6 @@ export function HomePage() {
   const [profiles, setProfiles] = useState<MeshProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [localPortInputs, setLocalPortInputs] = useState<Record<string, string>>({});
-  const [meshBaseVirtualEnvInputs, setMeshBaseVirtualEnvInputs] = useState<Record<string, string>>({});
   const [meshUserId, setMeshUserId] = useState('');
   const [message, setMessage] = useState('');
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set());
@@ -106,14 +100,6 @@ export function HomePage() {
     () => listOfflineFavoritePorts(localDevPorts, favoriteLocalPorts),
     [localDevPorts, favoriteLocalPorts],
   );
-
-  const meshBaseVirtualEnvOptions = useMemo(() => {
-    const seen = new Set<string>();
-    for (const p of [...profiles, ...catalogProfiles]) {
-      seen.add(p.virtualEnv);
-    }
-    return [...seen].sort((a, b) => a.localeCompare(b));
-  }, [profiles, catalogProfiles]);
 
   const activeMeshes = useMemo(
     () =>
@@ -249,15 +235,11 @@ export function HomePage() {
     setLocalPortInputs((prev) => ({ ...prev, [key]: value }));
   };
 
-  const setMeshBaseVirtualEnvInput = (key: string, value: string) => {
-    setMeshBaseVirtualEnvInputs((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const isAlreadyMeshing = (row: MeshProfile, baseVirtualEnv = row.virtualEnv): Session | undefined =>
+  const isAlreadyMeshing = (row: MeshProfile): Session | undefined =>
     activeMeshes.find(
       (s) =>
         meshSessionActiveKey(s, meshUserId) ===
-        `${row.namespace}/${row.appName}/${baseVirtualEnv}`,
+        `${row.namespace}/${row.appName}/${row.virtualEnv}`,
     );
 
   const stopMesh = async (id: string) => {
@@ -280,14 +262,9 @@ export function HomePage() {
       return;
     }
     const key = profileKey(row);
-    const baseVirtualEnv = (meshBaseVirtualEnvInputs[key] ?? row.virtualEnv).trim();
-    if (!baseVirtualEnv) {
-      setMessage('请选择或输入转发 virtual-env');
-      return;
-    }
     let meshVersion: string;
     try {
-      meshVersion = buildMeshVersion(baseVirtualEnv, id);
+      meshVersion = buildMeshVersion(row.virtualEnv, id);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
       return;
@@ -303,17 +280,12 @@ export function HomePage() {
       setMessage(e instanceof Error ? e.message : String(e));
       return;
     }
-    await requireKtveApi().mesh.start(row, port, id, baseVirtualEnv);
+    await requireKtveApi().mesh.start(row, port, id);
     const discovered = localDevPorts.find((d) => d.port === port);
     const runtimeHint = discovered
       ? `（${discovered.serviceName} · ${runtimeLabel(discovered.runtime)}）`
       : '';
     setMessage(`已启动：${MESH_HEADER}: ${meshVersion} → 127.0.0.1:${port}${runtimeHint}`);
-  };
-
-  const handleCopyMeshHeader = async (virtualEnv: string) => {
-    await copyVersionValue(virtualEnv);
-    setMessage(`已复制 ${MESH_HEADER} 值：${virtualEnv}`);
   };
 
   return (
@@ -543,7 +515,6 @@ export function HomePage() {
               <th className="px-3 py-2">集群 virtual-env</th>
               <th className="px-3 py-2">服务</th>
               <th className="px-3 py-2">命名空间</th>
-              <th className="min-w-[10rem] px-3 py-2">转发 virtual-env</th>
               <th className="min-w-[10rem] px-3 py-2">本地应用端口</th>
               <th className="w-12 px-2 py-2 text-center">健康</th>
               <th className="px-3 py-2">操作</th>
@@ -553,12 +524,11 @@ export function HomePage() {
             {displayedProfiles.map((row) => {
               const key = profileKey(row);
               const favKey = meshProfileKey(row);
-              const baseVirtualEnv = meshBaseVirtualEnvInputs[key] ?? row.virtualEnv;
-              const running = isAlreadyMeshing(row, baseVirtualEnv);
+              const running = isAlreadyMeshing(row);
               const portInput = localPortInputs[key] ?? '';
               const portValue = parsePortInput(portInput);
-              const canStart = !!meshUserId.trim() && !!baseVirtualEnv.trim() && portValue !== undefined;
-              const meshVersion = previewMeshVersion(baseVirtualEnv, meshUserId);
+              const canStart = !!meshUserId.trim() && portValue !== undefined;
+              const meshVersion = previewMeshVersion(row.virtualEnv, meshUserId);
               const favLabel = `${row.deploymentName} (${row.namespace})`;
               return (
                 <tr key={key} className="border-b hover:bg-gray-50">
@@ -579,16 +549,6 @@ export function HomePage() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-gray-600">{row.namespace}</td>
-                  <td className="px-3 py-2">
-                    <MeshBaseVirtualEnvPicker
-                      value={baseVirtualEnv}
-                      options={meshBaseVirtualEnvOptions}
-                      meshUserId={meshUserId}
-                      disabled={!!running}
-                      onChange={(v) => setMeshBaseVirtualEnvInput(key, v)}
-                      onCopyMeshHeader={(v) => void handleCopyMeshHeader(v)}
-                    />
-                  </td>
                   <td className="px-3 py-2">
                     {running ? (
                       <div className="font-mono text-sm text-gray-800">{running.localPort}</div>
@@ -642,7 +602,7 @@ export function HomePage() {
             })}
             {displayedProfiles.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
                   {listTab === 'favorites' && '暂无收藏的服务，点击星标添加收藏'}
                   {listTab === 'active' && '暂无进行中的流量转发'}
                   {listTab === 'all' && '未找到匹配的 virtual-env 工作负载'}

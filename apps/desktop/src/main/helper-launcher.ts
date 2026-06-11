@@ -10,12 +10,19 @@ import { HelperClient } from './helper-client.js';
 import { resolvePowershellPath } from './powershell-path.js';
 import { encodePowerShellCommand, isWindowsProcessElevated } from './windows-elevation.js';
 
+const HELPER_CONNECT_TIMEOUT_MS = 3000;
+const HELPER_PING_TIMEOUT_MS = 3000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function isHelperRunning(): Promise<boolean> {
   try {
     const client = new HelperClient();
-    await client.connect(1500);
+    await client.connect(HELPER_CONNECT_TIMEOUT_MS);
     const pong = await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => resolve(false), 2000);
+      const timer = setTimeout(() => resolve(false), HELPER_PING_TIMEOUT_MS);
       client.onMessage((msg) => {
         if (msg.event === 'pong') {
           clearTimeout(timer);
@@ -29,6 +36,23 @@ export async function isHelperRunning(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** 多次探测，避免 Helper 繁忙时误判为未运行而重复弹授权窗 */
+async function probeHelperRunning(attempts = 3, intervalMs = 400): Promise<boolean> {
+  for (let i = 0; i < attempts; i += 1) {
+    if (await isHelperRunning()) return true;
+    if (i < attempts - 1) await sleep(intervalMs);
+  }
+  return false;
+}
+
+let launchInFlight: Promise<void> | null = null;
+
+/** 确保 Helper 已运行；已授权则不再弹窗 */
+export async function ensureHelperRunning(): Promise<void> {
+  if (await probeHelperRunning()) return;
+  await launchHelperElevated();
 }
 
 function shellQuote(value: string): string {
@@ -162,6 +186,31 @@ async function launchHelperWindowsElevated(helper: string, socketPath: string): 
 }
 
 export async function launchHelperElevated(): Promise<void> {
+  if (await probeHelperRunning(2)) {
+    appendHelperLauncherLog('helper already running, skip elevate');
+    return;
+  }
+  if (launchInFlight) {
+    appendHelperLauncherLog('helper launch already in flight, waiting');
+    await launchInFlight;
+    if (await probeHelperRunning(2)) return;
+    throw new Error('Helper 启动失败，请稍后在配置页重新授权');
+  }
+
+  launchInFlight = launchHelperElevatedInner();
+  try {
+    await launchInFlight;
+  } finally {
+    launchInFlight = null;
+  }
+}
+
+async function launchHelperElevatedInner(): Promise<void> {
+  if (await probeHelperRunning(1)) {
+    appendHelperLauncherLog('helper became ready before elevate');
+    return;
+  }
+
   const helper = getHelperPath();
   if (!fs.existsSync(helper)) {
     throw new Error(`Helper 不存在: ${helper}`);

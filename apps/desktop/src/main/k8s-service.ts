@@ -4,6 +4,7 @@ import { parseDeployments } from '@kt-virtual-env/k8s-discovery';
 import type { MeshProfile, NamespaceConnectAccess } from '@kt-virtual-env/shared';
 import { getBundledBinary } from './binary-resolver.js';
 import { CONNECT_BASELINE_CHECKS, parseAuthCanI } from './k8s-auth.js';
+import { formatKubectlError } from './kubectl-error.js';
 import { filterMeshProfiles } from './mesh-profile-filter.js';
 
 const execFileAsync = promisify(execFile);
@@ -28,7 +29,20 @@ export class K8sService {
       await execFileAsync(kubectl, this.kubectlArgs(['cluster-info']), { timeout: 10_000 });
       return { ok: true, message: '集群连接正常' };
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      return { ok: false, message: formatKubectlError(e) };
+    }
+  }
+
+  private async runKubectl(args: string[], options?: { timeout?: number; maxBuffer?: number }): Promise<string> {
+    try {
+      const kubectl = getBundledBinary('kubectl');
+      const { stdout } = await execFileAsync(kubectl, this.kubectlArgs(args), {
+        timeout: options?.timeout ?? 15_000,
+        maxBuffer: options?.maxBuffer,
+      });
+      return stdout;
+    } catch (e) {
+      throw new Error(formatKubectlError(e));
     }
   }
 
@@ -52,11 +66,7 @@ export class K8sService {
   }
 
   async listNamespaces(prefixes: string[] = ['app-', 'infr-']): Promise<string[]> {
-    const kubectl = getBundledBinary('kubectl');
-    const { stdout } = await execFileAsync(
-      kubectl,
-      this.kubectlArgs(['get', 'ns', '-o', 'jsonpath={.items[*].metadata.name}']),
-    );
+    const stdout = await this.runKubectl(['get', 'ns', '-o', 'jsonpath={.items[*].metadata.name}']);
     return stdout.split(/\s+/).filter((n) => n && prefixes.some((p) => n.startsWith(p)));
   }
 

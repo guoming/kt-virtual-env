@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 )
 
 var (
@@ -26,11 +27,25 @@ func withoutHome(env []string) []string {
 	return out
 }
 
-func HandleConnect(ktctlPath string, args []string, ktHome string, onLog func(line string)) error {
+func isProcessAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+func HandleConnect(ktctlPath string, args []string, ktHome string, onLog func(line string), onExit func(exitErr error)) error {
 	mu.Lock()
 	defer mu.Unlock()
 	if connectCmd != nil && connectCmd.Process != nil {
-		return nil
+		if isProcessAlive(connectCmd.Process.Pid) {
+			return nil
+		}
+		connectCmd = nil
 	}
 	connectCmd = exec.Command(ktctlPath, args...)
 	if ktHome != "" {
@@ -48,11 +63,24 @@ func HandleConnect(ktctlPath string, args []string, ktHome string, onLog func(li
 		return err
 	}
 	if err := connectCmd.Start(); err != nil {
+		connectCmd = nil
 		return err
 	}
+	cmd := connectCmd
 	if onLog != nil {
 		go streamLogs(stdout, onLog)
 		go streamLogs(stderr, onLog)
+	}
+	if onExit != nil {
+		go func() {
+			waitErr := cmd.Wait()
+			mu.Lock()
+			if connectCmd == cmd {
+				connectCmd = nil
+			}
+			mu.Unlock()
+			onExit(waitErr)
+		}()
 	}
 	return nil
 }

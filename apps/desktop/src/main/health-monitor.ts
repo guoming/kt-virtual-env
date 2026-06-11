@@ -44,11 +44,16 @@ export class HealthMonitor {
 
   private async tick(): Promise<void> {
     const connectSession = this.deps.getConnectSession();
-    const connectResult = await checkConnectHealth(
-      connectSession,
-      await this.deps.isHelperRunning(),
-      this.deps.k8s(),
-    );
+    let connectResult: HealthCheckResult | null = null;
+
+    if (connectSession) {
+      connectResult = await checkConnectHealth(
+        connectSession,
+        await this.deps.isHelperRunning(),
+        this.deps.k8s(),
+      );
+    }
+
     this.snapshot = { ...this.snapshot, connect: connectResult };
 
     const sessions = this.deps

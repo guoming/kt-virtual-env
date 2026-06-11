@@ -38,9 +38,25 @@ export async function repairUserKtOwnership(): Promise<void> {
   await ensurePathWritable(ktDir, '~/.kt 目录');
 }
 
+let userKtRepairFailed = false;
+
 export async function ensureUserKtReady(): Promise<void> {
   ensureUserKtDirs();
-  await ensurePathWritable(getUserKtDir(), '~/.kt 目录');
+  if (isUserKtWritable()) {
+    userKtRepairFailed = false;
+    return;
+  }
+  if (userKtRepairFailed) {
+    throw new Error(
+      '~/.kt 目录权限不足。请在终端执行 sudo chown -R $(whoami) ~/.kt 后重试，勿重复点击授权以免反复弹窗。',
+    );
+  }
+  try {
+    await ensurePathWritable(getUserKtDir(), '~/.kt 目录');
+  } catch (e) {
+    userKtRepairFailed = true;
+    throw e;
+  }
 }
 
 export function readPidFromKtDir(ktHome: string, nameHint: string): number | undefined {
@@ -48,6 +64,22 @@ export function readPidFromKtDir(ktHome: string, nameHint: string): number | und
   if (!fs.existsSync(pidDir)) return undefined;
   for (const file of fs.readdirSync(pidDir)) {
     if (!nameHint || !file.toLowerCase().includes(nameHint.toLowerCase())) continue;
+    try {
+      const raw = fs.readFileSync(path.join(pidDir, file), 'utf8').trim();
+      const pid = Number.parseInt(raw, 10);
+      if (pid > 0) return pid;
+    } catch {
+      // ignore unreadable pid files
+    }
+  }
+  return undefined;
+}
+
+/** 读取 ktHome 下任意 pid 文件（connect 提权后文件名未必含 connect） */
+export function readAnyPidFromKtDir(ktHome: string): number | undefined {
+  const pidDir = path.join(ktHome, '.kt', 'pid');
+  if (!fs.existsSync(pidDir)) return undefined;
+  for (const file of fs.readdirSync(pidDir)) {
     try {
       const raw = fs.readFileSync(path.join(pidDir, file), 'utf8').trim();
       const pid = Number.parseInt(raw, 10);

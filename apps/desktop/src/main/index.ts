@@ -8,7 +8,7 @@ import { K8sService } from './k8s-service.js';
 import { ensureConfigReady, loadConfig, saveConfig } from './config-store.js';
 import { getBundledBinary } from './binary-resolver.js';
 import { HelperClient, buildConnectMessage } from './helper-client.js';
-import { isHelperRunning, launchHelperElevated } from './helper-launcher.js';
+import { ensureHelperRunning, isHelperRunning, launchHelperElevated } from './helper-launcher.js';
 import { stageKubeconfigForElevated, stageKtctlForElevated } from './elevated-binary-staging.js';
 import { ensureUserKtReady, getElevatedKtHome } from './kt-state.js';
 import { defaultChromeExtensionsDir } from './stain-extensions.js';
@@ -28,6 +28,7 @@ import {
   toggleStainBrowserDevTools,
 } from './stain-browser.js';
 import { checkEnvironment } from './environment-check.js';
+import { CONNECT_READY_LOG_PATTERN } from './health-check.js';
 import { HealthMonitor } from './health-monitor.js';
 import {
   discoverLocalDevPorts,
@@ -53,6 +54,7 @@ let connectSessionId: string | null = null;
 let helperClient: HelperClient | null = null;
 let healthMonitor: HealthMonitor | null = null;
 let isQuitting = false;
+let connectStoppingIntentionally = false;
 const retryingSessions = new Set<string>();
 
 function k8s(): K8sService {
@@ -83,27 +85,39 @@ async function disconnectConnectHelper(): Promise<void> {
   }
 }
 
+function markConnectReady(sessionId: string): void {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  const firstReady = session.state !== 'running';
+  sessions.markRunning(sessionId, 0);
+  if (firstReady) {
+    sessions.appendLog(sessionId, '[connect] 集群网络已打通');
+  }
+}
+
 function bindConnectHelperMessages(sessionId: string): void {
   helperClient?.onMessage((msg) => {
     if (msg.event === 'log') {
       sessions.appendLog(sessionId, msg.line);
+      if (CONNECT_READY_LOG_PATTERN.test(msg.line)) {
+        markConnectReady(sessionId);
+      }
     }
     if (msg.event === 'status') {
       if (msg.state === 'starting') sessions.markStarting(sessionId);
       if (msg.state === 'running') {
-        sessions.markRunning(sessionId, 0);
-        sessions.appendLog(sessionId, '[connect] 集群网络已打通');
+        sessions.appendLog(sessionId, '[connect] ktctl 已启动，等待路由与 DNS 就绪…');
       }
       if (msg.state === 'failed') {
         sessions.markFailed(sessionId);
         sessions.appendLog(sessionId, '[connect] 连接失败，请查看上方 ktctl 输出');
       }
       if (msg.state === 'stopped') {
-        if (connectSessionId === sessionId) {
-          sessions.remove(sessionId);
-          connectSessionId = null;
-          restartRegistry.clearConnect();
-        }
+        if (connectStoppingIntentionally) return;
+        if (connectSessionId !== sessionId) return;
+        const detail = msg.message ?? 'ktctl 进程已退出';
+        sessions.markFailed(sessionId);
+        sessions.appendLog(sessionId, `[connect] ${detail}，请点击「重试」重新连接`);
       }
     }
     if (msg.event === 'error') {
@@ -113,9 +127,7 @@ function bindConnectHelperMessages(sessionId: string): void {
 }
 
 async function launchConnectHelper(sessionId: string, params: ConnectParams): Promise<void> {
-  if (!(await isHelperRunning())) {
-    await launchHelperElevated();
-  }
+  await ensureHelperRunning();
   helperClient = new HelperClient();
   await helperClient.connect();
   const ktctlPath = stageKtctlForElevated(getBundledBinary('ktctl'));
@@ -128,12 +140,17 @@ async function launchConnectHelper(sessionId: string, params: ConnectParams): Pr
 }
 
 async function stopConnectSession(): Promise<void> {
-  await disconnectConnectHelper();
-  if (connectSessionId) {
-    sessions.remove(connectSessionId);
-    connectSessionId = null;
+  connectStoppingIntentionally = true;
+  try {
+    await disconnectConnectHelper();
+    if (connectSessionId) {
+      sessions.remove(connectSessionId);
+      connectSessionId = null;
+    }
+    restartRegistry.clearConnect();
+  } finally {
+    connectStoppingIntentionally = false;
   }
-  restartRegistry.clearConnect();
 }
 
 async function startConnectSession(params: ConnectParams): Promise<string> {
@@ -167,7 +184,12 @@ async function restartConnectSession(params: ConnectParams): Promise<void> {
   if (existingId && sessions.get(existingId)) {
     sessions.markStarting(existingId);
     try {
-      await disconnectConnectHelper();
+      connectStoppingIntentionally = true;
+      try {
+        await disconnectConnectHelper();
+      } finally {
+        connectStoppingIntentionally = false;
+      }
       await launchConnectHelper(existingId, params);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

@@ -9,58 +9,32 @@ import {
 import { getBundledBinary } from './binary-resolver.js';
 import { loadConfig } from './config-store.js';
 import type { K8sService } from './k8s-service.js';
-import { getElevatedKtHome, readPidFromKtDir } from './kt-state.js';
+import { probeKtctlConnectPid } from './ktctl-session-probe.js';
 import type { KtctlService } from './ktctl-service.js';
-import { isLocalPortOpen, isProcessAlive } from './process-utils.js';
+import { isLocalPortOpen } from './process-utils.js';
 
 const execFileAsync = promisify(execFile);
 
-const CONNECT_HEALTH_GRACE_MS = 60_000;
+/** connect 仅在 ktctl 输出就绪日志后才标记 running，宽限只需覆盖 DNS/路由短暂生效 */
+const CONNECT_HEALTH_GRACE_MS = 10_000;
+
+/** ktctl connect 完成就绪时的典型日志片段 */
+export const CONNECT_READY_LOG_PATTERN =
+  /All looks good|now you can access to resources in the kubernetes cluster/i;
+
 const SESSION_HEALTH_GRACE_MS = 30_000;
 
-function readConnectPidFromKtDir(ktHome: string): number | undefined {
-  return readPidFromKtDir(ktHome, 'connect');
-}
-
 async function probeKtctlConnectProcess(): Promise<{ ok: boolean; detail: string }> {
-  if (process.platform === 'win32') {
-    try {
-      const { stdout } = await execFileAsync(
-        'tasklist',
-        ['/FI', 'IMAGENAME eq ktctl.exe', '/NH'],
-        { timeout: 5000, windowsHide: true },
-      );
-      const ok = /ktctl\.exe/i.test(stdout);
-      return {
-        ok,
-        detail: ok ? '✓ 检测到 ktctl connect 进程' : '✗ 未检测到 ktctl.exe 进程',
-      };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return { ok: false, detail: `✗ 进程探测失败：${msg}` };
-    }
-  }
-
   try {
-    const { stdout } = await execFileAsync('pgrep', ['-f', 'ktctl connect'], { timeout: 5000 });
-    const pids = stdout
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((v) => Number.parseInt(v, 10))
-      .filter((pid) => pid > 0);
-    const ok = pids.length > 0;
+    const pid = await probeKtctlConnectPid();
+    const ok = pid !== undefined;
     return {
       ok,
       detail: ok
-        ? `✓ ktctl connect 进程存活 (pid ${pids.join(', ')})`
+        ? `✓ ktctl connect 进程存活 (pid ${pid})`
         : '✗ 未找到 ktctl connect 进程',
     };
   } catch (e) {
-    const err = e as NodeJS.ErrnoException;
-    if (err.code === 1) {
-      return { ok: false, detail: '✗ 未找到 ktctl connect 进程' };
-    }
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, detail: `✗ 进程探测失败：${msg}` };
   }
@@ -142,9 +116,16 @@ export async function checkConnectHealth(
     return buildHealthResult('unknown', '集群网络未连接', []);
   }
 
+  const readyInLogs = connectSession.logs.some((line) => CONNECT_READY_LOG_PATTERN.test(line));
+  if (!readyInLogs) {
+    return buildHealthResult('unknown', '集群网络连接建立中', [
+      '等待 ktctl 输出就绪日志…',
+    ]);
+  }
+
   if (isWithinConnectGracePeriod(connectSession)) {
-    return buildHealthResult('unknown', '集群网络连接稳定中', [
-      'connect 刚建立，等待路由与 DNS 生效…',
+    return buildHealthResult('unknown', '集群网络健康检测中', [
+      'connect 已就绪，正在检测集群连通性…',
     ]);
   }
 
@@ -160,16 +141,8 @@ export async function checkConnectHealth(
   details.push('✓ 组网 Helper 已运行');
 
   const proc = await probeKtctlConnectProcess();
-  let connectProcLine = proc.detail;
-  let connectProcOk = proc.ok;
-  if (!connectProcOk) {
-    const connectPid = readConnectPidFromKtDir(getElevatedKtHome());
-    if (connectPid && isProcessAlive(connectPid)) {
-      connectProcLine = `✓ ktctl connect 进程存活 (pid ${connectPid})`;
-      connectProcOk = true;
-    }
-  }
-  details.push(connectProcLine);
+  details.push(proc.detail);
+  const connectProcOk = proc.ok;
 
   const cfg = loadConfig();
   const dnsNs =
@@ -182,12 +155,11 @@ export async function checkConnectHealth(
   details.push(dnsLine);
 
   const coreOk = clusterOk && helperRunning && connectProcOk;
-  if (coreOk) {
-    return buildHealthResult(
-      'healthy',
-      dnsOk ? '集群网络连接正常' : '集群网络连接正常（DNS 尚未就绪）',
-      details,
-    );
+  if (coreOk && dnsOk) {
+    return buildHealthResult('healthy', '集群网络连接正常', details);
+  }
+  if (coreOk && !dnsOk) {
+    return buildHealthResult('degraded', '集群 DNS 不可用', details);
   }
 
   const passCount = [clusterOk, helperRunning, connectProcOk, dnsOk].filter(Boolean).length;

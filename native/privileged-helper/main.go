@@ -15,7 +15,7 @@ import (
 	"git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper/ipc"
 )
 
-const helperVersion = "0.1.13"
+const helperVersion = "0.1.15"
 
 func main() {
 	socketFlag := flag.String("socket", "", "IPC endpoint (tcp:127.0.0.1:port or unix path)")
@@ -116,6 +116,18 @@ func handleConnect(conn net.Conn, msg map[string]any, logFile *os.File, logErr e
 	if err := ipc.HandleConnect(ktctlPath, args, ktHome, func(line string) {
 		writeHelperLog(logFile, logErr, "ktctl: %s", line)
 		_ = ipc.WriteEvent(conn, map[string]any{"event": "log", "line": line})
+	}, func(exitErr error) {
+		writeHelperLog(logFile, logErr, "connect process exited: %v", exitErr)
+		msg := "ktctl connect 进程已退出"
+		if exitErr != nil {
+			msg = exitErr.Error()
+		}
+		_ = ipc.WriteEvent(conn, map[string]any{
+			"event":   "status",
+			"state":   "stopped",
+			"reason":  "process_exit",
+			"message": msg,
+		})
 	}); err != nil {
 		writeHelperLog(logFile, logErr, "connect failed: %v", err)
 		return ipc.WriteEvent(conn, map[string]any{"event": "status", "state": "failed", "message": err.Error()})

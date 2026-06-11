@@ -30,7 +30,7 @@ const LEVEL_STYLE: Record<
     bg: 'bg-gray-50',
     text: 'text-gray-700',
     dot: 'bg-gray-400',
-    label: '未检测',
+    label: '检测中',
   },
 };
 

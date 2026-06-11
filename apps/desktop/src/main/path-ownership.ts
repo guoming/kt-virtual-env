@@ -43,8 +43,10 @@ export async function repairPathOwnership(targetPath: string): Promise<void> {
 
   if (process.platform === 'darwin') {
     const user = os.userInfo().username;
-    await runOsascriptElevated(`chown -R ${user}:staff ${shellQuote(targetPath)}`);
-    await runOsascriptElevated(`chmod -R u+rwX ${shellQuote(targetPath)}`);
+    const quoted = shellQuote(targetPath);
+    await runOsascriptElevated(
+      `chown -R ${user}:staff ${quoted} && chmod -R u+rwX ${quoted}`,
+    );
     return;
   }
   if (process.platform === 'win32') {

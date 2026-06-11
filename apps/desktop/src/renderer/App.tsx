@@ -107,7 +107,7 @@ export default function App() {
         <main className="flex-1 overflow-auto p-4">
           <MainContent page={page} />
         </main>
-        <aside className="flex w-80 shrink-0 flex-col border-l p-3">
+        <aside className="flex min-h-0 w-80 shrink-0 flex-col border-l p-3">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold">会话 / 日志</h3>
             <button className="text-xs text-red-600" onClick={() => void api.sessions.stopAll()}>全部停止</button>
@@ -131,8 +131,15 @@ export default function App() {
               });
             }}
           />
-          <div className="mt-3 flex-1">
-            <LogViewer lines={selected?.logs ?? []} />
+          <div className="mt-3 min-h-0 flex-1">
+            <LogViewer
+              lines={selected?.logs ?? []}
+              title={
+                selected
+                  ? `${selected.type.toUpperCase()} · ${selected.target}`
+                  : '会话日志'
+              }
+            />
           </div>
         </aside>
       </div>
