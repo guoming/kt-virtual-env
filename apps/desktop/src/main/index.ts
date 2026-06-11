@@ -37,7 +37,6 @@ import {
 import { pickAvailableLocalPort } from './port-picker.js';
 import { loadBundledVersions } from './bundled-versions.js';
 import { RestartSpecRegistry } from './restart-spec-registry.js';
-import { SessionRecovery } from './session-recovery.js';
 import { createAppTray, destroyAppTray } from './tray.js';
 import { resolveAppIconPath } from './app-icon.js';
 import { getAppUpdater, initAppUpdater } from './app-updater.js';
@@ -54,6 +53,7 @@ let connectSessionId: string | null = null;
 let helperClient: HelperClient | null = null;
 let healthMonitor: HealthMonitor | null = null;
 let isQuitting = false;
+const retryingSessions = new Set<string>();
 
 function k8s(): K8sService {
   const cfg = loadConfig();
@@ -165,10 +165,6 @@ async function startConnectSession(params: ConnectParams): Promise<string> {
 async function restartConnectSession(params: ConnectParams): Promise<void> {
   const existingId = connectSessionId;
   if (existingId && sessions.get(existingId)) {
-    sessions.appendLog(
-      existingId,
-      '[auto-recovery] 健康检查连续 2 次异常，正在自动重连…',
-    );
     sessions.markStarting(existingId);
     try {
       await disconnectConnectHelper();
@@ -176,22 +172,48 @@ async function restartConnectSession(params: ConnectParams): Promise<void> {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       sessions.markFailed(existingId);
-      sessions.appendLog(existingId, `[connect] 自动重连失败：${msg}`);
+      sessions.appendLog(existingId, `[connect] 重连失败：${msg}`);
     }
     return;
   }
   await startConnectSession(params);
 }
 
-function initHealthMonitor(): void {
-  const recovery = new SessionRecovery({
-    registry: restartRegistry,
-    sessions,
-    ktctl: ktctlService,
-    recoverConnect: restartConnectSession,
-    appendLog: (id, line) => sessions.appendLog(id, line),
-  });
+async function retrySession(id: string): Promise<void> {
+  if (retryingSessions.has(id)) return;
+  const session = sessions.get(id);
+  if (!session) return;
 
+  retryingSessions.add(id);
+  try {
+    sessions.appendLog(id, '[retry] 用户手动重试…');
+
+    if (session.type === 'connect') {
+      const params = restartRegistry.getConnect();
+      if (!params) {
+        sessions.appendLog(id, '[retry] 缺少连接参数，无法重试');
+        return;
+      }
+      await restartConnectSession(params);
+      return;
+    }
+
+    const restarted = await ktctlService.restartSession(id);
+    if (!restarted) {
+      sessions.appendLog(id, '[retry] 缺少重启参数，无法重试');
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    sessions.appendLog(id, `[retry] 重试失败：${msg}`);
+    if (session.state !== 'stopped') {
+      sessions.markFailed(id);
+    }
+  } finally {
+    retryingSessions.delete(id);
+  }
+}
+
+function initHealthMonitor(): void {
   healthMonitor = new HealthMonitor({
     intervalMs: 10_000,
     getConnectSession: () =>
@@ -200,7 +222,6 @@ function initHealthMonitor(): void {
     k8s,
     listActiveSessions: () => sessions.list().filter((s) => s.state !== 'stopped'),
     ktctl: ktctlService,
-    recovery,
     onChanged: () => broadcastHealth(),
   });
   healthMonitor.start();
@@ -318,6 +339,10 @@ function registerIpc(): void {
       k8s().searchMeshProfiles(virtualEnvQuery, ns, deployQuery),
   );
   ipcMain.handle('k8s:listNamespaces', () => k8s().listNamespaces());
+  ipcMain.handle('k8s:listConnectNamespaceAccess', () => k8s().listConnectNamespaceAccess());
+  ipcMain.handle('k8s:checkConnectNamespaceAccess', (_e, ns: string) =>
+    k8s().checkConnectNamespaceAccess(ns),
+  );
   ipcMain.handle('k8s:listServices', (_e, ns: string) => k8s().listServices(ns));
   ipcMain.handle('k8s:searchServices', (_e, query: string, ns?: string) =>
     k8s().searchServices(query, ns),
@@ -406,7 +431,15 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle('connect:start', async (_e, params: ConnectParams) => startConnectSession(params));
+  ipcMain.handle('connect:start', async (_e, params: ConnectParams) => {
+    const access = await k8s().checkConnectNamespaceAccess(params.namespace);
+    if (!access.canConnect) {
+      throw new Error(
+        `基准命名空间 ${params.namespace} 权限不足：${access.reason ?? '请更换命名空间或联系管理员授权'}`,
+      );
+    }
+    return startConnectSession(params);
+  });
 
   ipcMain.handle('connect:stop', async () => {
     await stopConnectSession();
@@ -427,6 +460,9 @@ function registerIpc(): void {
     }
     restartRegistry.delete(id);
     await ktctlService.stopSession(id);
+  });
+  ipcMain.handle('sessions:retry', async (_e, id: string) => {
+    await retrySession(id);
   });
   ipcMain.handle('sessions:stopAll', async () => {
     await ktctlService.stopAll();

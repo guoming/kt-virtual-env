@@ -168,10 +168,10 @@ export class KtctlService {
     this.runners.delete(sessionId);
   }
 
-  async restartSession(sessionId: string): Promise<void> {
+  async restartSession(sessionId: string): Promise<boolean> {
     const spec = this.registry.getSession(sessionId);
     const session = this.sessions.get(sessionId);
-    if (!spec || !session) return;
+    if (!spec || !session) return false;
 
     this.runners.get(sessionId)?.stop();
     this.runners.delete(sessionId);
@@ -192,7 +192,15 @@ export class KtctlService {
             spec.versionMarkBaseVirtualEnv,
           ).args;
 
-    this.startRunner(sessionId, args);
+    try {
+      this.startRunner(sessionId, args);
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.sessions.appendLog(sessionId, `[retry] 重启失败：${msg}`);
+      this.sessions.markFailed(sessionId);
+      return false;
+    }
   }
 
   async stopSession(id: string): Promise<void> {

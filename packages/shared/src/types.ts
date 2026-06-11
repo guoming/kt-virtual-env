@@ -35,6 +35,13 @@ export interface ConnectParams {
   context: string;
 }
 
+/** Connect 基准命名空间权限探测结果 */
+export interface NamespaceConnectAccess {
+  name: string;
+  canConnect: boolean;
+  reason?: string;
+}
+
 export interface ComponentCheck {
   ok: boolean;
   path?: string;

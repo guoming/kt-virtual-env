@@ -11,7 +11,7 @@ import { SessionPanel } from './components/SessionPanel';
 import { LogViewer } from './components/LogViewer';
 import { ExitDialog } from './components/ExitDialog';
 import { NavMenu } from './components/NavMenu';
-import type { AppUpdateStatus } from '@kt-virtual-env/shared';
+import type { AppUpdateStatus, HealthSnapshot } from '@kt-virtual-env/shared';
 import { APP_NAME, APP_REPO_URL, APP_SLOGAN } from './lib/branding';
 import { VersionCompareLine } from './components/VersionCompareLine';
 import { mapUpdatePhase } from './lib/version-compare-utils';
@@ -33,6 +33,11 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string>();
   const [exitCount, setExitCount] = useState<number | null>(null);
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>();
+  const [healthSnapshot, setHealthSnapshot] = useState<HealthSnapshot>({
+    connect: null,
+    sessions: {},
+  });
+  const [retryingIds, setRetryingIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     if (!api) return;
@@ -50,6 +55,12 @@ export default function App() {
     const apply = (status: AppUpdateStatus) => setUpdateStatus(status);
     void api.update.getStatus().then(apply);
     return api.update.onChanged(apply);
+  }, [api]);
+
+  useEffect(() => {
+    if (!api) return;
+    void api.health.getSnapshot().then(setHealthSnapshot);
+    return api.health.onChanged(setHealthSnapshot);
   }, [api]);
 
   const panelSessions = useMemo(
@@ -103,9 +114,22 @@ export default function App() {
           </div>
           <SessionPanel
             sessions={panelSessions}
+            healthSnapshot={healthSnapshot}
+            retryingIds={retryingIds}
             selectedId={selected?.id}
             onSelect={setSelectedId}
             onStop={(id) => void api.sessions.stop(id)}
+            onRetry={(id) => {
+              if (retryingIds.has(id)) return;
+              setRetryingIds((prev) => new Set(prev).add(id));
+              void api.sessions.retry(id).finally(() => {
+                setRetryingIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(id);
+                  return next;
+                });
+              });
+            }}
           />
           <div className="mt-3 flex-1">
             <LogViewer lines={selected?.logs ?? []} />

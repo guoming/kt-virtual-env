@@ -11,12 +11,10 @@ import { loadConfig } from './config-store.js';
 import type { K8sService } from './k8s-service.js';
 import { getElevatedKtHome, readPidFromKtDir } from './kt-state.js';
 import type { KtctlService } from './ktctl-service.js';
-import { retryUntilPass } from './probe-retry.js';
 import { isLocalPortOpen, isProcessAlive } from './process-utils.js';
 
 const execFileAsync = promisify(execFile);
 
-const PROBE_RETRY = { attempts: 5, intervalMs: 1000 };
 const CONNECT_HEALTH_GRACE_MS = 60_000;
 const SESSION_HEALTH_GRACE_MS = 30_000;
 
@@ -150,12 +148,9 @@ export async function checkConnectHealth(
     ]);
   }
 
-  let clusterLine = '✗ 集群连接失败';
-  const clusterOk = await retryUntilPass(async () => {
-    const cluster = await k8s.testConnection();
-    clusterLine = cluster.ok ? `✓ ${cluster.message}` : `✗ ${cluster.message}`;
-    return cluster.ok;
-  }, PROBE_RETRY);
+  const cluster = await k8s.testConnection();
+  const clusterLine = cluster.ok ? `✓ ${cluster.message}` : `✗ ${cluster.message}`;
+  const clusterOk = cluster.ok;
   details.push(clusterLine);
 
   if (!helperRunning) {
@@ -164,18 +159,16 @@ export async function checkConnectHealth(
   }
   details.push('✓ 组网 Helper 已运行');
 
-  let connectProcLine = '✗ 未找到存活的 ktctl connect 进程';
-  const connectProcOk = await retryUntilPass(async () => {
-    const proc = await probeKtctlConnectProcess();
-    connectProcLine = proc.detail;
-    if (proc.ok) return true;
+  const proc = await probeKtctlConnectProcess();
+  let connectProcLine = proc.detail;
+  let connectProcOk = proc.ok;
+  if (!connectProcOk) {
     const connectPid = readConnectPidFromKtDir(getElevatedKtHome());
     if (connectPid && isProcessAlive(connectPid)) {
       connectProcLine = `✓ ktctl connect 进程存活 (pid ${connectPid})`;
-      return true;
+      connectProcOk = true;
     }
-    return false;
-  }, PROBE_RETRY);
+  }
   details.push(connectProcLine);
 
   const cfg = loadConfig();
@@ -183,12 +176,9 @@ export async function checkConnectHealth(
     cfg.connectDnsNamespaces.length > 0
       ? cfg.connectDnsNamespaces[0]!
       : connectSession.namespace;
-  let dnsLine = '✗ 集群 DNS 解析失败';
-  const dnsOk = await retryUntilPass(async () => {
-    const dnsResult = await probeClusterDns(dnsNs);
-    dnsLine = dnsResult.ok ? `✓ ${dnsResult.detail}` : `○ ${dnsResult.detail}`;
-    return dnsResult.ok;
-  }, PROBE_RETRY);
+  const dnsResult = await probeClusterDns(dnsNs);
+  const dnsLine = dnsResult.ok ? `✓ ${dnsResult.detail}` : `○ ${dnsResult.detail}`;
+  const dnsOk = dnsResult.ok;
   details.push(dnsLine);
 
   const coreOk = clusterOk && helperRunning && connectProcOk;
@@ -241,20 +231,13 @@ export async function checkSessionHealth(
   }
 
   const details: string[] = [];
-  let processLine = '✗ ktctl 进程未运行';
-  const processOk = await retryUntilPass(async () => {
-    const ok = await ktctl.isProcessRunning(session.id);
-    processLine = ok ? '✓ ktctl 进程存活' : '✗ ktctl 进程未运行';
-    return ok;
-  }, PROBE_RETRY);
+  const processOk = await ktctl.isProcessRunning(session.id);
+  const processLine = processOk ? '✓ ktctl 进程存活' : '✗ ktctl 进程未运行';
   details.push(processLine);
 
   let portOk = false;
   if (session.localPort) {
-    portOk = await retryUntilPass(
-      () => isLocalPortOpen(session.localPort!),
-      PROBE_RETRY,
-    );
+    portOk = await isLocalPortOpen(session.localPort);
     details.push(
       portOk
         ? `✓ 本地端口 ${session.localPort} 可连接`

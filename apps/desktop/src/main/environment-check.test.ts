@@ -12,7 +12,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 vi.mock('electron', () => ({
-  app: { getVersion: () => '0.1.22' },
+  app: { getVersion: () => '0.1.23' },
 }));
 
 vi.mock('./binary-resolver.js', () => ({

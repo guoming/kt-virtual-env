@@ -35,6 +35,8 @@ export interface KtveApi {
   k8s: {
     listProfiles: () => Promise<MeshProfile[]>;
     listNamespaces: () => Promise<string[]>;
+    listConnectNamespaceAccess: () => Promise<import('@kt-virtual-env/shared').NamespaceConnectAccess[]>;
+    checkConnectNamespaceAccess: (ns: string) => Promise<import('@kt-virtual-env/shared').NamespaceConnectAccess>;
     listServices: (ns: string) => Promise<Array<{ name: string; port: number }>>;
     searchProfiles: (
       virtualEnvQuery: string,
@@ -64,6 +66,7 @@ export interface KtveApi {
   sessions: {
     list: () => Promise<Session[]>;
     stop: (id: string) => Promise<void>;
+    retry: (id: string) => Promise<void>;
     stopAll: () => Promise<void>;
     onUpdate: (cb: (sessions: Session[]) => void) => () => void;
   };
@@ -147,6 +150,9 @@ const api: KtveApi = {
   k8s: {
     listProfiles: () => ipcRenderer.invoke('k8s:listProfiles'),
     listNamespaces: () => ipcRenderer.invoke('k8s:listNamespaces'),
+    listConnectNamespaceAccess: () => ipcRenderer.invoke('k8s:listConnectNamespaceAccess'),
+    checkConnectNamespaceAccess: (ns) =>
+      ipcRenderer.invoke('k8s:checkConnectNamespaceAccess', ns),
     listServices: (ns) => ipcRenderer.invoke('k8s:listServices', ns),
     searchServices: (query, ns) => ipcRenderer.invoke('k8s:searchServices', query, ns),
     searchProfiles: (virtualEnvQuery, ns, deployQuery) =>
@@ -170,6 +176,7 @@ const api: KtveApi = {
   sessions: {
     list: () => ipcRenderer.invoke('sessions:list'),
     stop: (id) => ipcRenderer.invoke('sessions:stop', id),
+    retry: (id) => ipcRenderer.invoke('sessions:retry', id),
     stopAll: () => ipcRenderer.invoke('sessions:stopAll'),
     onUpdate: (cb) => {
       const handler = (_: unknown, list: Session[]) => cb(list);

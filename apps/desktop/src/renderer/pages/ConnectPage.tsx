@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { HealthSnapshot, Session } from '@kt-virtual-env/shared';
+import type { HealthSnapshot, NamespaceConnectAccess, Session } from '@kt-virtual-env/shared';
 import { HealthStatusPanel } from '../components/HealthStatusPanel';
 import { useHealthPolling } from '../hooks/use-health-polling';
 import { requireKtveApi } from '../lib/api';
@@ -25,13 +25,24 @@ function connectStatusLabel(session: Session | undefined): {
   }
 }
 
+function pickDefaultBaseNamespace(
+  connectable: NamespaceConnectAccess[],
+  saved?: string,
+): string {
+  if (saved && connectable.some((row) => row.name === saved && row.canConnect)) {
+    return saved;
+  }
+  return connectable.find((row) => row.canConnect)?.name ?? '';
+}
+
 export function ConnectPage() {
   const { sessions } = useAppStore();
-  const [namespaces, setNamespaces] = useState<string[]>([]);
+  const [namespaceAccess, setNamespaceAccess] = useState<NamespaceConnectAccess[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [baseNs, setBaseNs] = useState('');
   const [message, setMessage] = useState('');
   const [connecting, setConnecting] = useState(false);
+  const [loadingNamespaces, setLoadingNamespaces] = useState(true);
 
   const connectSession = useMemo(
     () =>
@@ -45,6 +56,23 @@ export function ConnectPage() {
     () => connectStatusLabel(connectSession),
     [connectSession],
   );
+
+  const connectableNamespaces = useMemo(
+    () => namespaceAccess.filter((row) => row.canConnect).map((row) => row.name),
+    [namespaceAccess],
+  );
+
+  const deniedNamespaces = useMemo(
+    () => namespaceAccess.filter((row) => !row.canConnect),
+    [namespaceAccess],
+  );
+
+  const baseAccess = useMemo(
+    () => namespaceAccess.find((row) => row.name === baseNs),
+    [namespaceAccess, baseNs],
+  );
+
+  const canStartConnect = connectableNamespaces.length > 0 && Boolean(baseNs) && baseAccess?.canConnect;
 
   const isConnected = connectSession?.state === 'running';
   const isBusy =
@@ -60,12 +88,30 @@ export function ConnectPage() {
   } = useHealthPolling(selectConnect, true);
 
   useEffect(() => {
-    void requireKtveApi().k8s.listNamespaces().then((ns) => {
-      setNamespaces(ns);
-      if (ns[0]) setBaseNs(ns[0]);
-      setSelected(new Set(ns));
-    });
-  }, []);
+    setLoadingNamespaces(true);
+    void Promise.all([
+      requireKtveApi().k8s.listConnectNamespaceAccess(),
+      requireKtveApi().config.get(),
+    ])
+      .then(([access, cfg]) => {
+        setNamespaceAccess(access);
+        const defaultBase = pickDefaultBaseNamespace(
+          access,
+          cfg.connectDnsNamespaces[0] ?? connectSession?.namespace,
+        );
+        setBaseNs(defaultBase);
+        const dnsDefaults = cfg.connectDnsNamespaces.length > 0
+          ? cfg.connectDnsNamespaces.filter((ns) => access.some((row) => row.name === ns))
+          : access.map((row) => row.name);
+        setSelected(new Set(dnsDefaults.length > 0 ? dnsDefaults : access.map((row) => row.name)));
+      })
+      .catch((e) => {
+        setMessage(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        setLoadingNamespaces(false);
+      });
+  }, [connectSession?.namespace]);
 
   useEffect(() => {
     if (connectSession?.state === 'running') {
@@ -83,11 +129,16 @@ export function ConnectPage() {
   };
 
   const connect = async () => {
-    if (isConnected || isBusy) return;
+    if (!canStartConnect || isConnected || isBusy) return;
     setConnecting(true);
     setMessage('');
     try {
       const cfg = await requireKtveApi().config.get();
+      const access = await requireKtveApi().k8s.checkConnectNamespaceAccess(baseNs);
+      if (!access.canConnect) {
+        setMessage(`基准命名空间 ${baseNs} 权限不足：${access.reason ?? '请更换命名空间'}`);
+        return;
+      }
       await requireKtveApi().connect.start({
         namespace: baseNs,
         dnsNamespaces: [...selected],
@@ -131,20 +182,56 @@ export function ConnectPage() {
 
       <div>
         <label className="text-sm">基准命名空间</label>
-        <select className="ml-2 rounded border px-2 py-1 text-sm" value={baseNs} onChange={(e) => setBaseNs(e.target.value)}>
-          {namespaces.map((ns) => (
+        <select
+          className="ml-2 rounded border px-2 py-1 text-sm disabled:bg-gray-100"
+          value={baseNs}
+          disabled={loadingNamespaces || connectableNamespaces.length === 0}
+          onChange={(e) => setBaseNs(e.target.value)}
+        >
+          {connectableNamespaces.map((ns) => (
             <option key={ns} value={ns}>{ns}</option>
           ))}
         </select>
+        {loadingNamespaces && (
+          <p className="mt-1 text-xs text-gray-500">正在检测命名空间权限…</p>
+        )}
+        {!loadingNamespaces && connectableNamespaces.length === 0 && (
+          <p className="mt-1 text-xs text-red-700">
+            当前账号没有可用于 Connect 的命名空间，请确认具备目标命名空间的 Pod 创建与读取权限。
+          </p>
+        )}
+        {!loadingNamespaces && baseAccess && !baseAccess.canConnect && (
+          <p className="mt-1 text-xs text-red-700">
+            {baseAccess.reason ?? '基准命名空间权限不足'}
+          </p>
+        )}
+        {deniedNamespaces.length > 0 && (
+          <p className="mt-1 text-xs text-gray-500">
+            已隐藏 {deniedNamespaces.length} 个无 Connect 权限的命名空间
+            {deniedNamespaces.length <= 3
+              ? `（${deniedNamespaces.map((row) => row.name).join('、')}）`
+              : ''}
+          </p>
+        )}
       </div>
 
       <div>
         <div className="mb-2 text-sm font-medium">DNS 解析范围</div>
         <div className="grid max-h-48 grid-cols-2 gap-2 overflow-auto">
-          {namespaces.map((ns) => (
-            <label key={ns} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={selected.has(ns)} onChange={() => toggle(ns)} />
-              {ns}
+          {namespaceAccess.map((row) => (
+            <label key={row.name} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={selected.has(row.name)}
+                disabled={!row.canConnect}
+                onChange={() => toggle(row.name)}
+              />
+              <span className={row.canConnect ? '' : 'text-gray-400'}>
+                {row.name}
+                {!row.canConnect && (
+                  <span className="ml-1 text-xs text-gray-400">（无权限）</span>
+                )}
+              </span>
             </label>
           ))}
         </div>
@@ -152,12 +239,13 @@ export function ConnectPage() {
 
       <p className="text-xs text-amber-700">
         连接前请先在配置页完成「组网授权」；若尚未授权，连接时会再次请求管理员确认。
+        基准命名空间需具备 Pod 创建与读取权限，下拉列表已自动过滤无权命名空间。
       </p>
 
       <div className="flex gap-2">
         <button
           className="rounded bg-blue-600 px-4 py-1 text-sm text-white disabled:bg-gray-300"
-          disabled={isConnected || isBusy}
+          disabled={!canStartConnect || isConnected || isBusy}
           onClick={() => void connect()}
         >
           {isBusy ? '连接中…' : '连接集群网络'}

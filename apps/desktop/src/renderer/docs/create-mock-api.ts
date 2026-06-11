@@ -84,6 +84,9 @@ export function createMockApi(): KtveApi {
       searchProfiles: async (virtualEnvQuery, ns, deployQuery) =>
         filterProfiles(virtualEnvQuery, ns, deployQuery),
       listNamespaces: async () => MOCK_NAMESPACES,
+      listConnectNamespaceAccess: async () =>
+        MOCK_NAMESPACES.map((name) => ({ name, canConnect: true })),
+      checkConnectNamespaceAccess: async (ns) => ({ name: ns, canConnect: true }),
       listServices: async (namespace) =>
         MOCK_FORWARD_SERVICES.filter((service) => service.namespace === namespace),
       searchServices: async (query, ns) => filterServices(query, ns),
@@ -107,6 +110,7 @@ export function createMockApi(): KtveApi {
     sessions: {
       list: async () => MOCK_SESSIONS,
       stop: async () => {},
+      retry: async () => {},
       stopAll: async () => {},
       onUpdate: (cb) => {
         cb(MOCK_SESSIONS);

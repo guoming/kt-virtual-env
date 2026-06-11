@@ -1,5 +1,4 @@
 import {
-  buildHealthResult,
   type HealthCheckResult,
   type HealthSnapshot,
   type Session,
@@ -7,12 +6,10 @@ import {
 import { checkConnectHealth, checkSessionHealth } from './health-check.js';
 import type { K8sService } from './k8s-service.js';
 import type { KtctlService } from './ktctl-service.js';
-import { FailureTracker, type SessionRecovery } from './session-recovery.js';
 
 export class HealthMonitor {
   private timer: ReturnType<typeof setInterval> | null = null;
   private snapshot: HealthSnapshot = { connect: null, sessions: {} };
-  private tracker = new FailureTracker();
 
   constructor(
     private deps: {
@@ -22,7 +19,6 @@ export class HealthMonitor {
       k8s: () => K8sService;
       listActiveSessions: () => Session[];
       ktctl: KtctlService;
-      recovery: SessionRecovery;
       onChanged: (snapshot: HealthSnapshot) => void;
     },
   ) {}
@@ -47,19 +43,13 @@ export class HealthMonitor {
   }
 
   private async tick(): Promise<void> {
-    if (!this.deps.recovery.isRecovering('connect')) {
-      const connectSession = this.deps.getConnectSession();
-      const result = await checkConnectHealth(
-        connectSession,
-        await this.deps.isHelperRunning(),
-        this.deps.k8s(),
-      );
-      const enriched = this.enrich('connect', result);
-      this.snapshot = { ...this.snapshot, connect: enriched };
-      if (this.tracker.record('connect', enriched.level)) {
-        await this.deps.recovery.recoverConnect();
-      }
-    }
+    const connectSession = this.deps.getConnectSession();
+    const connectResult = await checkConnectHealth(
+      connectSession,
+      await this.deps.isHelperRunning(),
+      this.deps.k8s(),
+    );
+    this.snapshot = { ...this.snapshot, connect: connectResult };
 
     const sessions = this.deps
       .listActiveSessions()
@@ -69,32 +59,16 @@ export class HealthMonitor {
     for (const id of Object.keys(nextSessions)) {
       if (!sessions.some((s) => s.id === id)) {
         delete nextSessions[id];
-        this.tracker.reset(id);
-        this.deps.recovery.reset(id);
       }
     }
 
     await Promise.all(
       sessions.map(async (s) => {
-        if (this.deps.recovery.isRecovering(s.id)) return;
-        const result = await checkSessionHealth(s, this.deps.ktctl);
-        const enriched = this.enrich(s.id, result);
-        nextSessions[s.id] = enriched;
-        if (this.tracker.record(s.id, enriched.level)) {
-          await this.deps.recovery.recoverSession(s.id);
-        }
+        nextSessions[s.id] = await checkSessionHealth(s, this.deps.ktctl);
       }),
     );
 
     this.snapshot = { ...this.snapshot, sessions: nextSessions };
     this.deps.onChanged(this.snapshot);
-  }
-
-  private enrich(key: string, result: HealthCheckResult): HealthCheckResult {
-    const count = this.deps.recovery.getRecoveryCount(key);
-    return buildHealthResult(result.level, result.message, result.details, {
-      recovering: this.deps.recovery.isRecovering(key),
-      autoRecoveryCount: count > 0 ? count : undefined,
-    });
   }
 }

@@ -39,6 +39,8 @@ export interface KtveApi {
       deployQuery?: string,
     ) => Promise<MeshProfile[]>;
     listNamespaces: () => Promise<string[]>;
+    listConnectNamespaceAccess: () => Promise<import('@kt-virtual-env/shared').NamespaceConnectAccess[]>;
+    checkConnectNamespaceAccess: (ns: string) => Promise<import('@kt-virtual-env/shared').NamespaceConnectAccess>;
     listServices: (ns: string) => Promise<Array<{ name: string; port: number }>>;
     searchServices: (
       query: string,
@@ -67,6 +69,7 @@ export interface KtveApi {
   sessions: {
     list: () => Promise<Session[]>;
     stop: (id: string) => Promise<void>;
+    retry: (id: string) => Promise<void>;
     stopAll: () => Promise<void>;
     onUpdate: (cb: (sessions: Session[]) => void) => () => void;
   };
