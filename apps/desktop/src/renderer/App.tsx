@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SessionPanel } from './components/SessionPanel';
 import { LogViewer } from './components/LogViewer';
 import { ExitDialog } from './components/ExitDialog';
+import { AppLogo } from './components/AppLogo';
 import { NavMenu } from './components/NavMenu';
 import type { AppUpdateStatus, HealthSnapshot } from '@kt-virtual-env/shared';
 import { APP_NAME, APP_REPO_URL, APP_SLOGAN } from './lib/branding';
@@ -84,9 +85,12 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-14 items-center justify-between border-b px-4">
-        <div>
-          <div className="font-semibold leading-tight">{APP_NAME}</div>
-          <div className="text-xs text-gray-500">{APP_SLOGAN}</div>
+        <div className="flex items-center gap-3">
+          <AppLogo />
+          <div>
+            <div className="font-semibold leading-tight">{APP_NAME}</div>
+            <div className="text-xs text-gray-500">{APP_SLOGAN}</div>
+          </div>
         </div>
         <div className="flex flex-col items-end">
           {updateStatus && (
