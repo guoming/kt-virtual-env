@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"git.eminxing.com/fbg/tools/dev-tools/kt-virtual-env/native/privileged-helper/ipc"
+	"strconv"
 )
 
 const helperVersion = "0.1.15"
@@ -149,7 +150,52 @@ func buildConnectArgs(params map[string]any) []string {
 	if contextName != "" {
 		args = append(args, "--context", contextName)
 	}
+	return appendConnectOptions(args, params)
+}
+
+func appendConnectOptions(args []string, params map[string]any) []string {
+	options, _ := params["options"].(map[string]any)
+	if options == nil {
+		return args
+	}
+	if debug, ok := options["debug"].(bool); ok && debug {
+		args = append(args, "--debug")
+	}
+	if useLocalTime, ok := options["useLocalTime"].(bool); ok && useLocalTime {
+		args = append(args, "--useLocalTime")
+	}
+	if mode, ok := options["mode"].(string); ok && mode != "" && mode != "tun2socks" {
+		args = append(args, "--mode", mode)
+	}
+	if excludeIps, ok := options["excludeIps"].(string); ok && strings.TrimSpace(excludeIps) != "" {
+		args = append(args, "--excludeIps", strings.TrimSpace(excludeIps))
+	}
+	if pft := parsePositiveInt(options["portForwardTimeout"]); pft > 0 && pft != 10 {
+		args = append(args, "--portForwardTimeout", strconv.Itoa(pft))
+	}
 	return args
+}
+
+func parsePositiveInt(v any) int {
+	switch n := v.(type) {
+	case float64:
+		if n >= 1 {
+			return int(n)
+		}
+	case int:
+		if n >= 1 {
+			return n
+		}
+	case int64:
+		if n >= 1 {
+			return int(n)
+		}
+	case string:
+		if parsed, err := strconv.Atoi(strings.TrimSpace(n)); err == nil && parsed >= 1 {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func toStringSlice(v any) []string {

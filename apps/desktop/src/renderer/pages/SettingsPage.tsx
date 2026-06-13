@@ -3,7 +3,8 @@ import { requireKtveApi } from '../lib/api';
 import { AppUpdatePanel } from '../components/AppUpdatePanel';
 import { VersionCompareLine } from '../components/VersionCompareLine';
 import { useAppStore } from '../stores/app-store';
-import type { EnvironmentStatus } from '@kt-virtual-env/shared';
+import type { ConnectExcludeIpsResult, ConnectOptions, EnvironmentStatus } from '@kt-virtual-env/shared';
+import { DEFAULT_CONNECT_OPTIONS, normalizeConnectOptions } from '@kt-virtual-env/shared';
 
 function kubeconfigLabel(path: string): string {
   if (!path.trim()) return '未选择';
@@ -56,6 +57,11 @@ export function SettingsPage() {
   const [kubeconfig, setKubeconfig] = useState('');
   const [context, setContext] = useState('');
   const [meshUserId, setMeshUserId] = useState('');
+  const [connectOptions, setConnectOptions] = useState<ConnectOptions>(DEFAULT_CONNECT_OPTIONS);
+  const [excludeIpsPreview, setExcludeIpsPreview] = useState<ConnectExcludeIpsResult | null>(
+    null,
+  );
+  const [excludeIpsLoading, setExcludeIpsLoading] = useState(false);
   const [contexts, setContexts] = useState<string[]>([]);
   const [env, setEnv] = useState<EnvironmentStatus | null>(null);
   const [checking, setChecking] = useState(false);
@@ -76,15 +82,40 @@ export function SettingsPage() {
     }
   }, [setHelperRunning]);
 
+  const refreshExcludeIpsPreview = useCallback(async () => {
+    setExcludeIpsLoading(true);
+    try {
+      const result = await requireKtveApi().k8s.getConnectExcludeIps();
+      setExcludeIpsPreview(result);
+    } catch (e) {
+      setExcludeIpsPreview({
+        ok: false,
+        cidrs: [],
+        excludeIps: '',
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setExcludeIpsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void requireKtveApi().config.get().then((cfg) => {
-      setKubeconfig(cfg.kubeconfig as string);
-      setContext(cfg.context as string);
-      setMeshUserId((cfg.meshUserId as string) ?? '');
+      const c = cfg as {
+        kubeconfig: string;
+        context: string;
+        meshUserId?: string;
+        connectOptions?: Partial<ConnectOptions>;
+      };
+      setKubeconfig(c.kubeconfig);
+      setContext(c.context);
+      setMeshUserId(c.meshUserId ?? '');
+      setConnectOptions(normalizeConnectOptions(c.connectOptions));
     });
     void requireKtveApi().k8s.listContexts().then(setContexts);
     void runEnvironmentCheck();
-  }, [runEnvironmentCheck]);
+    void refreshExcludeIpsPreview();
+  }, [runEnvironmentCheck, refreshExcludeIpsPreview]);
 
   const authorizeHelper = async () => {
     setAuthorizing(true);
@@ -106,8 +137,18 @@ export function SettingsPage() {
   };
 
   const save = async () => {
-    await requireKtveApi().config.save({ kubeconfig, context, meshUserId: meshUserId.trim() });
+    await requireKtveApi().config.save({
+      kubeconfig,
+      context,
+      meshUserId: meshUserId.trim(),
+      connectOptions: normalizeConnectOptions(connectOptions),
+    });
+    setConnectOptions(normalizeConnectOptions(connectOptions));
     setEnvMessage('配置已保存');
+  };
+
+  const patchConnectOptions = (partial: Partial<ConnectOptions>) => {
+    setConnectOptions((prev) => normalizeConnectOptions({ ...prev, ...partial }));
   };
 
   const envReady = env?.helper.running && env?.ktctl.ok && env?.kubectl.ok;
@@ -231,6 +272,122 @@ export function SettingsPage() {
         {!env?.kubectl.ok && (
           <p className="mt-1 text-xs text-amber-700">kubectl 就绪后可加载 Context 列表</p>
         )}
+      </div>
+
+      <div className="rounded-lg border bg-gray-50 p-4">
+        <h3 className="text-base font-medium">网络连接高级选项</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          对应 ktctl connect 参数，保存后在下一次「连接集群网络」或「重试」时生效。
+        </p>
+
+        <div className="mt-4 space-y-4 text-sm">
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={connectOptions.debug}
+              onChange={(e) => patchConnectOptions({ debug: e.target.checked })}
+            />
+            <span>
+              <span className="font-medium">调试日志</span>
+              <span className="ml-1 text-gray-500">(--debug)</span>
+              <p className="mt-0.5 text-xs text-gray-500">
+                输出 port-forward / socks 重连日志，排查间歇断线。
+              </p>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={connectOptions.useLocalTime}
+              onChange={(e) => patchConnectOptions({ useLocalTime: e.target.checked })}
+            />
+            <span>
+              <span className="font-medium">本机时间心跳</span>
+              <span className="ml-1 text-gray-500">(--useLocalTime)</span>
+              <p className="mt-0.5 text-xs text-gray-500">
+                心跳时间戳使用本机时间，集群与本机时钟偏差大时可避免误触发 clean。
+              </p>
+            </span>
+          </label>
+
+          <div>
+            <label className="font-medium">
+              Port-forward 超时（秒）
+              <span className="ml-1 font-normal text-gray-500">(--portForwardTimeout)</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={300}
+              className="mt-1 w-32 rounded border px-2 py-1 text-sm"
+              value={connectOptions.portForwardTimeout}
+              onChange={(e) =>
+                patchConnectOptions({ portForwardTimeout: Number(e.target.value) })
+              }
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              默认 10。网络慢或 API 延迟高时可设为 30 等更大值。
+            </p>
+          </div>
+
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={connectOptions.excludeIpsEnabled}
+              onChange={(e) => patchConnectOptions({ excludeIpsEnabled: e.target.checked })}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">排除本机网段</span>
+              <span className="ml-1 text-gray-500">(--excludeIps)</span>
+              <p className="mt-0.5 text-xs text-gray-500">
+                开启后 connect 时自动检测本机 IPv4 网段并排除，避免与集群路由或 VPN 冲突。
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded border bg-white px-2 py-0.5 text-xs hover:bg-gray-50 disabled:opacity-50"
+                  disabled={excludeIpsLoading}
+                  onClick={() => void refreshExcludeIpsPreview()}
+                >
+                  {excludeIpsLoading ? '检测中…' : '重新检测本机网段'}
+                </button>
+                {excludeIpsPreview && (
+                  <span
+                    className={`text-xs ${excludeIpsPreview.ok ? 'text-gray-600' : 'text-amber-700'}`}
+                  >
+                    {excludeIpsPreview.ok
+                      ? excludeIpsPreview.excludeIps
+                      : excludeIpsPreview.message}
+                  </span>
+                )}
+              </div>
+            </span>
+          </label>
+
+          <div>
+            <label className="font-medium">
+              隧道模式
+              <span className="ml-1 font-normal text-gray-500">(--mode)</span>
+            </label>
+            <select
+              className="mt-1 w-full rounded border px-2 py-1 text-sm"
+              value={connectOptions.mode}
+              onChange={(e) =>
+                patchConnectOptions({ mode: e.target.value as ConnectOptions['mode'] })
+              }
+            >
+              <option value="tun2socks">tun2socks（默认，TUN 设备 + SOCKS）</option>
+              <option value="sshuttle">sshuttle（SSH VPN，macOS / Linux）</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              休眠唤醒后 tun2socks 路由异常时，可尝试 sshuttle（Windows 不支持）。
+            </p>
+          </div>
+        </div>
       </div>
 
       <button

@@ -45,6 +45,7 @@ export interface KtveApi {
     ) => Promise<MeshProfile[]>;
     listContexts: () => Promise<string[]>;
     testConnection: () => Promise<{ ok: boolean; message: string }>;
+    getConnectExcludeIps: () => Promise<import('@kt-virtual-env/shared').ConnectExcludeIpsResult>;
   };
   mesh: {
     start: (
@@ -159,6 +160,7 @@ const api: KtveApi = {
       ipcRenderer.invoke('k8s:searchProfiles', virtualEnvQuery, ns, deployQuery),
     listContexts: () => ipcRenderer.invoke('k8s:listContexts'),
     testConnection: () => ipcRenderer.invoke('k8s:testConnection'),
+    getConnectExcludeIps: () => ipcRenderer.invoke('k8s:getConnectExcludeIps'),
   },
   mesh: {
     start: (profile, localPort, userId, versionMarkBaseVirtualEnv) =>

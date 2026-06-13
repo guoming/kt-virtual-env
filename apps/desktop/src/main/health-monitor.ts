@@ -6,10 +6,18 @@ import {
 import { checkConnectHealth, checkSessionHealth } from './health-check.js';
 import type { K8sService } from './k8s-service.js';
 import type { KtctlService } from './ktctl-service.js';
+import {
+  buildProcessMissingLog,
+  healthResultIndicatesConnectProcessMissing,
+  healthResultIndicatesSessionProcessMissing,
+  ProcessMissingTracker,
+  shouldTrackProcessMissing,
+} from './session-process-sync.js';
 
 export class HealthMonitor {
   private timer: ReturnType<typeof setInterval> | null = null;
   private snapshot: HealthSnapshot = { connect: null, sessions: {} };
+  private processMissingTracker = new ProcessMissingTracker();
 
   constructor(
     private deps: {
@@ -20,6 +28,8 @@ export class HealthMonitor {
       listActiveSessions: () => Session[];
       ktctl: KtctlService;
       onChanged: (snapshot: HealthSnapshot) => void;
+      onSessionProcessMissing?: (session: Session) => void;
+      isIntentionalConnectStop?: () => boolean;
     },
   ) {}
 
@@ -52,6 +62,7 @@ export class HealthMonitor {
         await this.deps.isHelperRunning(),
         this.deps.k8s(),
       );
+      this.trackProcessPresence(connectSession, connectResult, healthResultIndicatesConnectProcessMissing);
     }
 
     this.snapshot = { ...this.snapshot, connect: connectResult };
@@ -69,11 +80,44 @@ export class HealthMonitor {
 
     await Promise.all(
       sessions.map(async (s) => {
-        nextSessions[s.id] = await checkSessionHealth(s, this.deps.ktctl);
+        const result = await checkSessionHealth(s, this.deps.ktctl);
+        nextSessions[s.id] = result;
+        this.trackProcessPresence(s, result, healthResultIndicatesSessionProcessMissing);
       }),
+    );
+
+    this.processMissingTracker.prune(
+      this.deps.listActiveSessions().map((s) => s.id),
     );
 
     this.snapshot = { ...this.snapshot, sessions: nextSessions };
     this.deps.onChanged(this.snapshot);
+  }
+
+  private trackProcessPresence(
+    session: Session,
+    result: HealthCheckResult,
+    isMissing: (result: HealthCheckResult) => boolean,
+  ): void {
+    if (!shouldTrackProcessMissing(session, result)) {
+      this.processMissingTracker.clear(session.id);
+      return;
+    }
+
+    if (session.type === 'connect' && this.deps.isIntentionalConnectStop?.()) {
+      this.processMissingTracker.clear(session.id);
+      return;
+    }
+
+    if (isMissing(result)) {
+      this.processMissingTracker.recordMissing(session.id);
+      if (this.processMissingTracker.shouldSync(session.id)) {
+        this.processMissingTracker.clear(session.id);
+        this.deps.onSessionProcessMissing?.(session);
+      }
+      return;
+    }
+
+    this.processMissingTracker.recordPresent(session.id);
   }
 }

@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ConnectParams, ForwardParams, MeshProfile, SessionType } from '@kt-virtual-env/shared';
+import { formatConnectOptionsForLog, type ConnectLaunchOptions } from '@kt-virtual-env/shared';
+import { detectLocalExcludeIps } from './local-exclude-ips.js';
 import { SessionManager } from './session-manager.js';
 import { KtctlService } from './ktctl-service.js';
 import { K8sService } from './k8s-service.js';
@@ -30,6 +32,7 @@ import {
 import { checkEnvironment } from './environment-check.js';
 import { CONNECT_READY_LOG_PATTERN } from './health-check.js';
 import { HealthMonitor } from './health-monitor.js';
+import { buildProcessMissingLog } from './session-process-sync.js';
 import {
   discoverLocalDevPorts,
   pickMeshLocalPort,
@@ -126,14 +129,28 @@ function bindConnectHelperMessages(sessionId: string): void {
   });
 }
 
+async function resolveConnectLaunchOptions(): Promise<ConnectLaunchOptions> {
+  const base = loadConfig().connectOptions;
+  if (!base.excludeIpsEnabled) {
+    return { ...base };
+  }
+  const detected = detectLocalExcludeIps();
+  return {
+    ...base,
+    ...(detected.excludeIps ? { excludeIps: detected.excludeIps } : {}),
+  };
+}
+
 async function launchConnectHelper(sessionId: string, params: ConnectParams): Promise<void> {
   await ensureHelperRunning();
   helperClient = new HelperClient();
   await helperClient.connect();
   const ktctlPath = stageKtctlForElevated(getBundledBinary('ktctl'));
+  const options = await resolveConnectLaunchOptions();
   const elevatedParams: ConnectParams = {
     ...params,
     kubeconfig: stageKubeconfigForElevated(params.kubeconfig),
+    options,
   };
   bindConnectHelperMessages(sessionId);
   helperClient.send(buildConnectMessage(ktctlPath, elevatedParams, getElevatedKtHome()));
@@ -164,10 +181,12 @@ async function startConnectSession(params: ConnectParams): Promise<string> {
   restartRegistry.setConnect(params);
   await saveConfig({ connectDnsNamespaces: params.dnsNamespaces });
   sessions.markStarting(session.id);
+  const connectOpts = await resolveConnectLaunchOptions();
   sessions.appendLog(
     session.id,
     `[connect] 正在连接集群网络（${params.namespace}）…`,
   );
+  sessions.appendLog(session.id, `[connect] ktctl 参数：${formatConnectOptionsForLog(connectOpts)}`);
   try {
     await launchConnectHelper(session.id, params);
   } catch (e) {
@@ -235,6 +254,13 @@ async function retrySession(id: string): Promise<void> {
   }
 }
 
+function syncSessionProcessMissing(session: Session): void {
+  const current = sessions.get(session.id);
+  if (!current || current.state !== 'running') return;
+  sessions.markFailed(session.id);
+  sessions.appendLog(session.id, buildProcessMissingLog(current));
+}
+
 function initHealthMonitor(): void {
   healthMonitor = new HealthMonitor({
     intervalMs: 10_000,
@@ -245,6 +271,8 @@ function initHealthMonitor(): void {
     listActiveSessions: () => sessions.list().filter((s) => s.state !== 'stopped'),
     ktctl: ktctlService,
     onChanged: () => broadcastHealth(),
+    isIntentionalConnectStop: () => connectStoppingIntentionally,
+    onSessionProcessMissing: syncSessionProcessMissing,
   });
   healthMonitor.start();
 }
@@ -351,6 +379,7 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('k8s:testConnection', () => k8s().testConnection());
+  ipcMain.handle('k8s:getConnectExcludeIps', () => detectLocalExcludeIps());
   ipcMain.handle('k8s:listProfiles', async () => {
     meshProfileCache = await k8s().listMeshProfiles();
     return meshProfileCache;

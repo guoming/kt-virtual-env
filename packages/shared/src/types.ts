@@ -1,5 +1,9 @@
+import type { ConnectLaunchOptions } from './connect-options.js';
+
 export type SessionType = 'connect' | 'forward' | 'mesh';
 export type SessionState = 'pending' | 'starting' | 'running' | 'failed' | 'stopped';
+
+export type { ConnectLaunchOptions, ConnectMode, ConnectOptions } from './connect-options.js';
 
 export interface Session {
   id: string;
@@ -33,6 +37,8 @@ export interface ConnectParams {
   dnsNamespaces: string[];
   kubeconfig: string;
   context: string;
+  /** ktctl connect 高级参数；未指定时由主进程从应用配置注入 */
+  options?: ConnectLaunchOptions;
 }
 
 /** Connect 基准命名空间权限探测结果 */
@@ -40,6 +46,14 @@ export interface NamespaceConnectAccess {
   name: string;
   canConnect: boolean;
   reason?: string;
+}
+
+/** 本机网段检测，供 connect --excludeIps 使用 */
+export interface ConnectExcludeIpsResult {
+  ok: boolean;
+  cidrs: string[];
+  excludeIps: string;
+  message: string;
 }
 
 export interface ComponentCheck {

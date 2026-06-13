@@ -1,5 +1,6 @@
 import type {
   AppUpdateStatus,
+  ConnectExcludeIpsResult,
   ConnectParams,
   EnvironmentStatus,
   ForwardParams,
@@ -48,6 +49,7 @@ export interface KtveApi {
     ) => Promise<Array<{ name: string; namespace: string; port: number }>>;
     listContexts: () => Promise<string[]>;
     testConnection: () => Promise<{ ok: boolean; message: string }>;
+    getConnectExcludeIps: () => Promise<ConnectExcludeIpsResult>;
   };
   mesh: {
     start: (

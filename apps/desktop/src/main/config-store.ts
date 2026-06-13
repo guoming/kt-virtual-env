@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { migrateStainUrlHistory } from '@kt-virtual-env/shared';
+import { migrateStainUrlHistory, normalizeConnectOptions, type ConnectOptions } from '@kt-virtual-env/shared';
 import { ensurePathWritable, isPathWritable } from './path-ownership.js';
 
 export interface AppConfig {
@@ -21,6 +21,8 @@ export interface AppConfig {
   stainExtensionPaths: string[];
   recentNamespaces: string[];
   connectDnsNamespaces: string[];
+  /** 网络连接（Connect）ktctl 高级参数 */
+  connectOptions: ConnectOptions;
   /** 流量转发收藏：namespace/deploymentName */
   favoriteMeshKeys: string[];
   /** 端口转发收藏：namespace/serviceName */
@@ -56,6 +58,7 @@ const DEFAULTS: AppConfig = {
   meshUserId: os.userInfo().username,
   recentNamespaces: [],
   connectDnsNamespaces: [],
+  connectOptions: normalizeConnectOptions(),
   favoriteMeshKeys: [],
   favoriteForwardKeys: [],
   favoriteLocalDevPorts: [],
@@ -89,12 +92,23 @@ export async function ensureConfigReady(): Promise<void> {
 export function loadConfig(): AppConfig {
   const raw = readConfigFile();
   const stainUrlHistory = migrateStainUrlHistory(raw.stainUrlHistory, raw.lastStainUrl);
-  return { ...DEFAULTS, ...raw, stainUrlHistory };
+  return {
+    ...DEFAULTS,
+    ...raw,
+    stainUrlHistory,
+    connectOptions: normalizeConnectOptions(raw.connectOptions),
+  };
 }
 
 export async function saveConfig(cfg: Partial<AppConfig>): Promise<AppConfig> {
   await ensureConfigReady();
-  const merged = { ...loadConfig(), ...cfg };
+  const merged = {
+    ...loadConfig(),
+    ...cfg,
+    ...(cfg.connectOptions !== undefined
+      ? { connectOptions: normalizeConnectOptions(cfg.connectOptions) }
+      : {}),
+  };
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), { mode: 0o600 });
   return merged;
 }
