@@ -177,7 +177,7 @@ export function SettingsPage() {
         <ul className="space-y-2 text-sm">
           <CheckItem
             title="组网授权"
-            description="网络连接（Connect）需修改本机路由与集群 DNS 解析，须一次性授予管理员权限。授权后后台常驻，避免每次连接重复输入密码。"
+            description="网络连接（Connect）需修改本机路由与集群 DNS 解析。macOS 首次授权会安装系统服务并常驻后台，崩溃后自动重启，无需重复输入密码；Windows 每次授权需确认管理员权限。"
             check={
               env?.helper ?? { ok: false, message: checking ? '检测中…' : '未检测' }
             }

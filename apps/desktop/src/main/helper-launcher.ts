@@ -7,6 +7,11 @@ import { appendHelperLauncherLog, getHelperLogPath } from './helper-log.js';
 import { getHelperSocketPath, isTcpHelperEndpoint } from './helper-socket.js';
 import { getHelperPath } from './binary-resolver.js';
 import { HelperClient } from './helper-client.js';
+import {
+  installMacLaunchDaemon,
+  isMacLaunchDaemonInstalled,
+  kickstartMacLaunchDaemon,
+} from './helper-launchd.js';
 import { resolvePowershellPath } from './powershell-path.js';
 import { encodePowerShellCommand, isWindowsProcessElevated } from './windows-elevation.js';
 
@@ -49,14 +54,18 @@ async function probeHelperRunning(attempts = 3, intervalMs = 400): Promise<boole
 
 let launchInFlight: Promise<void> | null = null;
 
-/** 确保 Helper 已运行；已授权则不再弹窗 */
+/** 确保 Helper 已运行；macOS 已安装 LaunchDaemon 时由 launchd 自动拉起，免弹窗 */
 export async function ensureHelperRunning(): Promise<void> {
   if (await probeHelperRunning()) return;
-  await launchHelperElevated();
-}
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  if (process.platform === 'darwin' && isMacLaunchDaemonInstalled()) {
+    await sleep(2000);
+    if (await probeHelperRunning()) return;
+    await kickstartMacLaunchDaemon();
+    if (await probeHelperRunning(6, 500)) return;
+  }
+
+  await launchHelperElevated();
 }
 
 /** Go flag 须用 -socket= 形式，避免 RunAs 下参数被合并 */
@@ -185,8 +194,8 @@ async function launchHelperWindowsElevated(helper: string, socketPath: string): 
   }
 }
 
-export async function launchHelperElevated(): Promise<void> {
-  if (await probeHelperRunning(2)) {
+export async function launchHelperElevated(options?: { force?: boolean }): Promise<void> {
+  if (!options?.force && (await probeHelperRunning(2))) {
     appendHelperLauncherLog('helper already running, skip elevate');
     return;
   }
@@ -197,7 +206,7 @@ export async function launchHelperElevated(): Promise<void> {
     throw new Error('Helper 启动失败，请稍后在配置页重新授权');
   }
 
-  launchInFlight = launchHelperElevatedInner();
+  launchInFlight = launchHelperElevatedInner(options);
   try {
     await launchInFlight;
   } finally {
@@ -205,8 +214,8 @@ export async function launchHelperElevated(): Promise<void> {
   }
 }
 
-async function launchHelperElevatedInner(): Promise<void> {
-  if (await probeHelperRunning(1)) {
+async function launchHelperElevatedInner(options?: { force?: boolean }): Promise<void> {
+  if (!options?.force && (await probeHelperRunning(1))) {
     appendHelperLauncherLog('helper became ready before elevate');
     return;
   }
@@ -230,10 +239,8 @@ async function launchHelperElevatedInner(): Promise<void> {
   await stopExistingHelper();
 
   if (process.platform === 'darwin') {
-    const cmd = `export KTVE_HELPER_SOCKET=${shellQuote(socketPath)}; ${shellQuote(helper)} -log ${shellQuote(logPath)} </dev/null >>${shellQuote(logPath)} 2>&1 &`;
-    const script = `do shell script "${cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" with administrator privileges`;
-    appendHelperLauncherLog(`macos osascript elevate socket=${socketPath}`);
-    await spawnDetached('osascript', ['-e', script]);
+    appendHelperLauncherLog(`macos launchd install socket=${socketPath}`);
+    await installMacLaunchDaemon(helper, socketPath, logPath);
   } else if (process.platform === 'win32') {
     await launchHelperWindowsElevated(helper, socketPath);
   } else {

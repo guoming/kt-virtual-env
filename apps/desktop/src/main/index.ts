@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, powerMonitor, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ConnectParams, ForwardParams, MeshProfile, SessionType } from '@kt-virtual-env/shared';
@@ -32,7 +32,11 @@ import {
 import { checkEnvironment } from './environment-check.js';
 import { CONNECT_READY_LOG_PATTERN } from './health-check.js';
 import { HealthMonitor } from './health-monitor.js';
-import { buildProcessMissingLog } from './session-process-sync.js';
+import {
+  buildHelperMissingLog,
+  buildHelperRecoveryFailedLog,
+  buildProcessMissingLog,
+} from './session-process-sync.js';
 import {
   discoverLocalDevPorts,
   pickMeshLocalPort,
@@ -59,6 +63,7 @@ let healthMonitor: HealthMonitor | null = null;
 let isQuitting = false;
 let connectStoppingIntentionally = false;
 const retryingSessions = new Set<string>();
+let recoveringConnect = false;
 
 function k8s(): K8sService {
   const cfg = loadConfig();
@@ -261,6 +266,34 @@ function syncSessionProcessMissing(session: Session): void {
   sessions.appendLog(session.id, buildProcessMissingLog(current));
 }
 
+// [AI-GEN] scope:recoverConnectHelper, model:auto, reviewed:false
+async function recoverConnectHelper(session: Session): Promise<void> {
+  if (recoveringConnect) return;
+  const current = sessions.get(session.id);
+  if (!current || current.state !== 'running') return;
+
+  const params = restartRegistry.getConnect();
+  if (!params) {
+    sessions.appendLog(session.id, '[connect] 缺少连接参数，无法自动恢复');
+    return;
+  }
+
+  recoveringConnect = true;
+  sessions.appendLog(session.id, buildHelperMissingLog());
+  try {
+    await ensureHelperRunning();
+    await restartConnectSession(params);
+    sessions.appendLog(session.id, '[connect] 组网 Helper 已恢复，连接已重新建立');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    sessions.markFailed(session.id);
+    sessions.appendLog(session.id, buildHelperRecoveryFailedLog(msg));
+  } finally {
+    recoveringConnect = false;
+  }
+}
+// [/AI-GEN]
+
 function initHealthMonitor(): void {
   healthMonitor = new HealthMonitor({
     intervalMs: 10_000,
@@ -272,7 +305,11 @@ function initHealthMonitor(): void {
     ktctl: ktctlService,
     onChanged: () => broadcastHealth(),
     isIntentionalConnectStop: () => connectStoppingIntentionally,
+    isConnectRecovering: () => recoveringConnect,
     onSessionProcessMissing: syncSessionProcessMissing,
+    onConnectHelperMissing: (session) => {
+      void recoverConnectHelper(session);
+    },
   });
   healthMonitor.start();
 }
@@ -498,7 +535,7 @@ function registerIpc(): void {
 
   ipcMain.handle('helper:status', async () => ({ running: await isHelperRunning() }));
   ipcMain.handle('helper:authorize', async () => {
-    await launchHelperElevated();
+    await launchHelperElevated({ force: true });
     return { running: await isHelperRunning() };
   });
 
@@ -609,6 +646,9 @@ if (!gotSingleInstanceLock) {
     createAppTray({
       onShow: focusMainWindow,
       onQuit: requestQuit,
+    });
+    powerMonitor.on('resume', () => {
+      void healthMonitor?.forceCheck();
     });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

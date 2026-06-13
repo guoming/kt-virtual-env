@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildHealthResult, type Session } from '@kt-virtual-env/shared';
 import {
+  buildHelperMissingLog,
   buildProcessMissingLog,
   healthResultIndicatesConnectProcessMissing,
+  healthResultIndicatesHelperMissing,
   healthResultIndicatesSessionProcessMissing,
   ProcessMissingTracker,
   PROCESS_MISSING_SYNC_THRESHOLD,
@@ -99,3 +101,23 @@ describe('healthResultIndicatesSessionProcessMissing', () => {
     expect(healthResultIndicatesSessionProcessMissing(result)).toBe(true);
   });
 });
+
+// [AI-GEN] scope:helperMissing, model:auto, reviewed:false
+describe('healthResultIndicatesHelperMissing', () => {
+  it('detects helper not running detail', () => {
+    const result = buildHealthResult('unhealthy', '组网 Helper 未运行', ['✗ 组网 Helper 未运行']);
+    expect(healthResultIndicatesHelperMissing(result)).toBe(true);
+  });
+
+  it('returns false when helper is running', () => {
+    const result = buildHealthResult('healthy', '正常', ['✓ 组网 Helper 已运行']);
+    expect(healthResultIndicatesHelperMissing(result)).toBe(false);
+  });
+});
+
+describe('buildHelperMissingLog', () => {
+  it('mentions auto recovery', () => {
+    expect(buildHelperMissingLog()).toContain('自动恢复');
+  });
+});
+// [/AI-GEN]

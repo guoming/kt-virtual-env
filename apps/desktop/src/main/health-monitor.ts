@@ -9,6 +9,7 @@ import type { KtctlService } from './ktctl-service.js';
 import {
   buildProcessMissingLog,
   healthResultIndicatesConnectProcessMissing,
+  healthResultIndicatesHelperMissing,
   healthResultIndicatesSessionProcessMissing,
   ProcessMissingTracker,
   shouldTrackProcessMissing,
@@ -18,6 +19,7 @@ export class HealthMonitor {
   private timer: ReturnType<typeof setInterval> | null = null;
   private snapshot: HealthSnapshot = { connect: null, sessions: {} };
   private processMissingTracker = new ProcessMissingTracker();
+  private helperMissingTracker = new ProcessMissingTracker();
 
   constructor(
     private deps: {
@@ -29,7 +31,9 @@ export class HealthMonitor {
       ktctl: KtctlService;
       onChanged: (snapshot: HealthSnapshot) => void;
       onSessionProcessMissing?: (session: Session) => void;
+      onConnectHelperMissing?: (session: Session) => void;
       isIntentionalConnectStop?: () => boolean;
+      isConnectRecovering?: () => boolean;
     },
   ) {}
 
@@ -62,7 +66,16 @@ export class HealthMonitor {
         await this.deps.isHelperRunning(),
         this.deps.k8s(),
       );
-      this.trackProcessPresence(connectSession, connectResult, healthResultIndicatesConnectProcessMissing);
+      if (healthResultIndicatesHelperMissing(connectResult)) {
+        this.trackHelperMissing(connectSession, connectResult);
+      } else {
+        this.helperMissingTracker.clear(connectSession.id);
+        this.trackProcessPresence(
+          connectSession,
+          connectResult,
+          healthResultIndicatesConnectProcessMissing,
+        );
+      }
     }
 
     this.snapshot = { ...this.snapshot, connect: connectResult };
@@ -87,6 +100,9 @@ export class HealthMonitor {
     );
 
     this.processMissingTracker.prune(
+      this.deps.listActiveSessions().map((s) => s.id),
+    );
+    this.helperMissingTracker.prune(
       this.deps.listActiveSessions().map((s) => s.id),
     );
 
@@ -120,4 +136,28 @@ export class HealthMonitor {
 
     this.processMissingTracker.recordPresent(session.id);
   }
+
+  // [AI-GEN] scope:trackHelperMissing, model:auto, reviewed:false
+  private trackHelperMissing(session: Session, result: HealthCheckResult): void {
+    if (!shouldTrackProcessMissing(session, result)) {
+      this.helperMissingTracker.clear(session.id);
+      return;
+    }
+
+    if (session.type === 'connect' && this.deps.isIntentionalConnectStop?.()) {
+      this.helperMissingTracker.clear(session.id);
+      return;
+    }
+
+    if (this.deps.isConnectRecovering?.()) {
+      return;
+    }
+
+    this.helperMissingTracker.recordMissing(session.id);
+    if (this.helperMissingTracker.shouldSync(session.id)) {
+      this.helperMissingTracker.clear(session.id);
+      this.deps.onConnectHelperMissing?.(session);
+    }
+  }
+  // [/AI-GEN]
 }

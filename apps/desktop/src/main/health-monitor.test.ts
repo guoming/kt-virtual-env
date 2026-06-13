@@ -53,4 +53,43 @@ describe('HealthMonitor process missing sync', () => {
     expect(onSessionProcessMissing).toHaveBeenCalledTimes(1);
     expect(onSessionProcessMissing).toHaveBeenCalledWith(session);
   });
+
+  it('triggers helper recovery after consecutive helper-missing probes', async () => {
+    const session = connectSession();
+    const onSessionProcessMissing = vi.fn();
+    const onConnectHelperMissing = vi.fn();
+    const unhealthy = buildHealthResult('unhealthy', '组网 Helper 未运行', [
+      '✓ 集群连接正常',
+      '✗ 组网 Helper 未运行',
+    ]);
+
+    const monitor = new HealthMonitor({
+      intervalMs: 10_000,
+      getConnectSession: () => session,
+      isHelperRunning: async () => false,
+      k8s: () =>
+        ({
+          testConnection: async () => ({ ok: true, message: 'ok' }),
+        }) as never,
+      listActiveSessions: () => [session],
+      ktctl: {} as never,
+      onChanged: () => {},
+      onSessionProcessMissing,
+      onConnectHelperMissing,
+    });
+
+    vi.spyOn(await import('./health-check.js'), 'checkConnectHealth').mockResolvedValue(unhealthy);
+    vi.spyOn(await import('./health-check.js'), 'checkSessionHealth').mockResolvedValue(
+      buildHealthResult('healthy', 'ok', []),
+    );
+
+    await monitor.forceCheck();
+    expect(onConnectHelperMissing).not.toHaveBeenCalled();
+    expect(onSessionProcessMissing).not.toHaveBeenCalled();
+
+    await monitor.forceCheck();
+    expect(onConnectHelperMissing).toHaveBeenCalledTimes(1);
+    expect(onConnectHelperMissing).toHaveBeenCalledWith(session);
+    expect(onSessionProcessMissing).not.toHaveBeenCalled();
+  });
 });

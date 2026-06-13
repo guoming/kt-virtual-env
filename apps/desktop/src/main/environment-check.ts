@@ -9,6 +9,7 @@ import { findBundledBinary, findHelperPath } from './binary-resolver.js';
 import { fetchLatestAppVersion } from './app-release-check.js';
 import { loadBundledVersions } from './bundled-versions.js';
 import { isHelperRunning } from './helper-launcher.js';
+import { isMacLaunchDaemonInstalled, kickstartMacLaunchDaemon } from './helper-launchd.js';
 import { getHelperLogPath } from './helper-log.js';
 
 const execFileAsync = promisify(execFile);
@@ -90,23 +91,43 @@ async function checkHelper(): Promise<ComponentCheck & { running: boolean }> {
   }
   const running = await isHelperRunning();
   if (!running) {
+    if (process.platform === 'darwin' && isMacLaunchDaemonInstalled()) {
+      await kickstartMacLaunchDaemon();
+      await new Promise((r) => setTimeout(r, 1000));
+      const retried = await isHelperRunning();
+      if (retried) {
+        return {
+          ok: true,
+          path: helperPath,
+          running: true,
+          message: '已授权（系统服务），可进行网络连接',
+        };
+      }
+    }
     const logHint =
       process.platform === 'win32' || process.platform === 'darwin'
         ? `，失败时可查看日志：${getHelperLogPath()}`
         : '';
+    const authHint =
+      process.platform === 'darwin'
+        ? '点击「授权组网」完成一次性管理员授权，之后由系统服务自动维护，无需重复输入密码'
+        : '点击「授权组网」，在系统弹窗中确认管理员权限（仅网络连接需要）';
     return {
       ok: false,
       path: helperPath,
       running: false,
       message: '待授权',
-      hint: `点击「授权组网」，在系统弹窗中确认管理员权限（仅网络连接需要）${logHint}`,
+      hint: `${authHint}${logHint}`,
     };
   }
   return {
     ok: true,
     path: helperPath,
     running: true,
-    message: '已授权，可进行网络连接',
+    message:
+      process.platform === 'darwin' && isMacLaunchDaemonInstalled()
+        ? '已授权（系统服务），可进行网络连接'
+        : '已授权，可进行网络连接',
   };
 }
 

@@ -5,6 +5,7 @@ export const PROCESS_MISSING_SYNC_THRESHOLD = 2;
 
 const CONNECT_PROCESS_MISSING = '未找到 ktctl connect 进程';
 const SESSION_PROCESS_MISSING = 'ktctl 进程未运行';
+const HELPER_NOT_RUNNING = '组网 Helper 未运行';
 
 export function healthResultIndicatesConnectProcessMissing(result: HealthCheckResult): boolean {
   return result.details.some((line) => line.includes(CONNECT_PROCESS_MISSING));
@@ -13,6 +14,22 @@ export function healthResultIndicatesConnectProcessMissing(result: HealthCheckRe
 export function healthResultIndicatesSessionProcessMissing(result: HealthCheckResult): boolean {
   return result.details.some((line) => line.includes(SESSION_PROCESS_MISSING));
 }
+
+// [AI-GEN] scope:healthResultIndicatesHelperMissing, model:auto, reviewed:false
+export function healthResultIndicatesHelperMissing(result: HealthCheckResult): boolean {
+  return result.details.some((line) => line.includes(HELPER_NOT_RUNNING));
+}
+// [/AI-GEN]
+
+// [AI-GEN] scope:buildHelperMissingLog, model:auto, reviewed:false
+export function buildHelperMissingLog(): string {
+  return '[connect] 组网 Helper 已停止，正在尝试自动恢复连接…';
+}
+
+export function buildHelperRecoveryFailedLog(message: string): string {
+  return `[connect] 自动恢复失败：${message}。请在「设置 → 环境检测」点击「授权组网」完成一次性授权。`;
+}
+// [/AI-GEN]
 
 export function shouldTrackProcessMissing(session: Session, result: HealthCheckResult): boolean {
   if (session.state !== 'running') return false;
