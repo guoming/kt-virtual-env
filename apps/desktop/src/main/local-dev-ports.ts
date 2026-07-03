@@ -9,6 +9,7 @@ import {
 } from '@kt-virtual-env/shared';
 import { isLocalPortOpen } from './process-utils.js';
 import { resolvePowershellPath } from './powershell-path.js';
+import { withWindowsExecOptions } from './windows-spawn.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -89,7 +90,7 @@ async function discoverDockerPublishedPorts(): Promise<LocalDevPort[]> {
     const { stdout } = await execFileAsync(
       'docker',
       ['ps', '--format', '{{.Names}}\t{{.Ports}}'],
-      { timeout: 10_000, maxBuffer: 2 * 1024 * 1024 },
+      withWindowsExecOptions({ timeout: 10_000, maxBuffer: 2 * 1024 * 1024 }),
     );
     const rows: LocalDevPort[] = [];
     for (const line of stdout.split('\n')) {
@@ -144,9 +145,9 @@ async function resolveCommandLine(pid: number): Promise<string | undefined> {
   try {
     if (process.platform === 'win32') {
       const script = `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`;
-      const { stdout } = await execFileAsync(getPowershellExecutable(), ['-NoProfile', '-Command', script], {
+      const { stdout } = await execFileAsync(getPowershellExecutable(), ['-NoProfile', '-Command', script], withWindowsExecOptions({
         maxBuffer: 1024 * 1024,
-      });
+      }));
       const line = stdout.trim();
       return line || undefined;
     }
@@ -220,7 +221,7 @@ async function discoverWindows(): Promise<LocalDevPort[]> {
   const { stdout } = await execFileAsync(
     getPowershellExecutable(),
     ['-NoProfile', '-Command', script],
-    { maxBuffer: 4 * 1024 * 1024 },
+    withWindowsExecOptions({ maxBuffer: 4 * 1024 * 1024 }),
   );
   const rows: LocalDevPort[] = [];
   for (const line of stdout.split('\n')) {

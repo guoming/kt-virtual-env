@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { parseDeployments } from '@kt-virtual-env/k8s-discovery';
 import type { MeshProfile, NamespaceConnectAccess } from '@kt-virtual-env/shared';
 import { getBundledBinary } from './binary-resolver.js';
+import { withWindowsExecOptions } from './windows-spawn.js';
 import { CONNECT_BASELINE_CHECKS, parseAuthCanI } from './k8s-auth.js';
 import { formatKubectlError } from './kubectl-error.js';
 import { filterMeshProfiles } from './mesh-profile-filter.js';
@@ -26,7 +27,7 @@ export class K8sService {
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     try {
       const kubectl = getBundledBinary('kubectl');
-      await execFileAsync(kubectl, this.kubectlArgs(['cluster-info']), { timeout: 10_000 });
+      await execFileAsync(kubectl, this.kubectlArgs(['cluster-info']), withWindowsExecOptions({ timeout: 10_000 }));
       return { ok: true, message: '集群连接正常' };
     } catch (e) {
       return { ok: false, message: formatKubectlError(e) };
@@ -36,10 +37,10 @@ export class K8sService {
   private async runKubectl(args: string[], options?: { timeout?: number; maxBuffer?: number }): Promise<string> {
     try {
       const kubectl = getBundledBinary('kubectl');
-      const { stdout } = await execFileAsync(kubectl, this.kubectlArgs(args), {
+      const { stdout } = await execFileAsync(kubectl, this.kubectlArgs(args), withWindowsExecOptions({
         timeout: options?.timeout ?? 15_000,
         maxBuffer: options?.maxBuffer,
-      });
+      }));
       return stdout;
     } catch (e) {
       throw new Error(formatKubectlError(e));
@@ -51,7 +52,7 @@ export class K8sService {
     const { stdout } = await execFileAsync(
       kubectl,
       this.kubectlArgs(['get', 'deploy', '-A', '-l', 'virtual-env', '-o', 'json']),
-      { maxBuffer: 10 * 1024 * 1024 },
+      withWindowsExecOptions({ maxBuffer: 10 * 1024 * 1024 }),
     );
     return parseDeployments(JSON.parse(stdout));
   }
@@ -76,7 +77,7 @@ export class K8sService {
       const { stdout } = await execFileAsync(
         kubectl,
         this.kubectlArgs(['auth', 'can-i', verb, resource, '-n', namespace]),
-        { timeout: 5000 },
+        withWindowsExecOptions({ timeout: 5000 }),
       );
       return parseAuthCanI(stdout);
     } catch {
@@ -128,6 +129,7 @@ export class K8sService {
       const { stdout } = await execFileAsync(
         kubectl,
         this.kubectlArgs(['get', 'svc', '-n', ns, '-o', 'json']),
+        withWindowsExecOptions({}),
       );
       const json = JSON.parse(stdout) as {
         items: Array<{ metadata: { name: string }; spec: { ports?: Array<{ port: number }> } }>;
@@ -155,6 +157,7 @@ export class K8sService {
     const { stdout } = await execFileAsync(
       kubectl,
       ['config', 'get-contexts', '-o', 'name', '--kubeconfig', this.kubeconfig],
+      withWindowsExecOptions({}),
     );
     return stdout.split('\n').map((l) => l.trim()).filter(Boolean);
   }

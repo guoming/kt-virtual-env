@@ -85,7 +85,7 @@ export interface ForwardParams {
 
 export type HelperInbound =
   | { cmd: 'ping' }
-  | { cmd: 'connect'; params: ConnectParams; ktctlPath: string; ktHome: string }
+  | { cmd: 'connect'; params: ConnectParams; ktctlPath: string; ktHome: string; kubectlBinDir?: string }
   | { cmd: 'disconnect' }
   | { cmd: 'shutdown' };
 

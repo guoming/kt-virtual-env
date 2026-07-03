@@ -109,12 +109,13 @@ func handleConnect(conn net.Conn, msg map[string]any, logFile *os.File, logErr e
 		return ipc.WriteEvent(conn, map[string]any{"event": "error", "code": "MISSING_KTCTL", "message": "ktctlPath required"})
 	}
 	ktHome, _ := msg["ktHome"].(string)
+	kubectlBinDir, _ := msg["kubectlBinDir"].(string)
 	params, _ := msg["params"].(map[string]any)
 	args := buildConnectArgs(params)
-	writeHelperLog(logFile, logErr, "connect ktctl=%s args=%v", ktctlPath, args)
+	writeHelperLog(logFile, logErr, "connect ktctl=%s kubectlBin=%s args=%v", ktctlPath, kubectlBinDir, args)
 	_ = ipc.WriteEvent(conn, map[string]any{"event": "status", "state": "starting"})
 
-	if err := ipc.HandleConnect(ktctlPath, args, ktHome, func(line string) {
+	if err := ipc.HandleConnect(ktctlPath, args, ktHome, kubectlBinDir, func(line string) {
 		writeHelperLog(logFile, logErr, "ktctl: %s", line)
 		_ = ipc.WriteEvent(conn, map[string]any{"event": "log", "line": line})
 	}, func(exitErr error) {

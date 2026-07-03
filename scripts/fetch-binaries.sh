@@ -148,10 +148,13 @@ download_kubectl() {
   local url="https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/${os}/${arch}/${artifact}"
   local ok=0
   if [[ "$platform_key" == windows-amd64 ]]; then
-    if curl_download "$url" "$dest/kubectl.exe"; then
+    if curl_download "$url" "$dest/kubectl.real.exe"; then
       ok=1
-    elif copy_from_path kubectl.exe "$dest/kubectl.exe"; then
+    elif copy_from_path kubectl.exe "$dest/kubectl.real.exe"; then
       ok=1
+    fi
+    if [[ "$ok" -eq 1 ]]; then
+      bash "$ROOT/native/kubectl-shim/build.sh"
     fi
   else
     if curl_download "$url" "$dest/kubectl"; then
@@ -166,6 +169,12 @@ download_kubectl() {
     return 1
   fi
   local installed="$dest/$artifact"
+  if [[ "$platform_key" == windows-amd64 ]]; then
+    installed="$dest/kubectl.exe"
+    if [[ ! -f "$installed" ]]; then
+      installed="$dest/kubectl.real.exe"
+    fi
+  fi
   if should_verify_binary "$platform_key"; then
     if ! "$installed" version --client >/dev/null 2>&1; then
       echo "kubectl 下载后无法执行: $installed" >&2

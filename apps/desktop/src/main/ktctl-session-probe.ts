@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import type { Session } from '@kt-virtual-env/shared';
 import { getElevatedKtHome, getUserKtDir, readAnyPidFromKtDir, readPidFromKtDir } from './kt-state.js';
 import { isProcessAlive } from './process-utils.js';
-import { getWindowsExecOptions } from './windows-spawn.js';
+import { withWindowsExecOptions } from './windows-spawn.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -38,7 +38,7 @@ async function pgrepKtctlPid(pattern: string): Promise<number | undefined> {
       const { stdout } = await execFileAsync(
         'powershell',
         ['-NoProfile', '-Command', script],
-        { timeout: 5000, ...getWindowsExecOptions() },
+        withWindowsExecOptions({ timeout: 5000 }),
       );
       const pid = Number.parseInt(stdout.trim(), 10);
       return pid > 0 && isProcessAlive(pid) ? pid : undefined;

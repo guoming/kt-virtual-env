@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -38,7 +39,31 @@ func isProcessAlive(pid int) bool {
 	return proc.Signal(syscall.Signal(0)) == nil
 }
 
-func HandleConnect(ktctlPath string, args []string, ktHome string, onLog func(line string), onExit func(exitErr error)) error {
+func prependPathDir(env []string, dir string) []string {
+	if dir == "" {
+		return env
+	}
+	sep := string(os.PathListSeparator)
+	prefix := dir + sep
+	out := make([]string, 0, len(env)+1)
+	found := false
+	for _, item := range env {
+		if strings.HasPrefix(item, "PATH=") {
+			found = true
+			val := item[5:]
+			if val != dir && !strings.HasPrefix(val, prefix) {
+				item = "PATH=" + prefix + val
+			}
+		}
+		out = append(out, item)
+	}
+	if !found {
+		out = append(out, "PATH="+dir)
+	}
+	return out
+}
+
+func HandleConnect(ktctlPath string, args []string, ktHome string, kubectlBinDir string, onLog func(line string), onExit func(exitErr error)) error {
 	mu.Lock()
 	defer mu.Unlock()
 	if connectCmd != nil && connectCmd.Process != nil {
@@ -49,12 +74,17 @@ func HandleConnect(ktctlPath string, args []string, ktHome string, onLog func(li
 	}
 	connectCmd = exec.Command(ktctlPath, args...)
 	applyHideConsoleWindow(connectCmd)
+	env := os.Environ()
+	if kubectlBinDir != "" {
+		env = prependPathDir(env, kubectlBinDir)
+	}
 	if ktHome != "" {
 		pidDir := filepath.Join(ktHome, ".kt", "pid")
 		_ = os.MkdirAll(pidDir, 0o777)
 		_ = os.Chmod(pidDir, 0o777)
-		connectCmd.Env = append(withoutHome(os.Environ()), "HOME="+ktHome)
+		env = append(withoutHome(env), "HOME="+ktHome)
 	}
+	connectCmd.Env = env
 	stdout, err := connectCmd.StdoutPipe()
 	if err != nil {
 		return err

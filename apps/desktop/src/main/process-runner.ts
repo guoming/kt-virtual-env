@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { getWindowsSpawnOptions } from './windows-spawn.js';
+import { buildKtctlSpawnEnv, getWindowsSpawnOptions } from './windows-spawn.js';
 
 export interface RunResult {
   code: number | null;
@@ -16,7 +16,7 @@ export class ProcessRunner extends EventEmitter {
 
   start(bin: string, args: string[], env?: Record<string, string>): void {
     this.proc = spawn(bin, args, {
-      env: { ...process.env, ...env },
+      env: buildKtctlSpawnEnv(env),
       ...getWindowsSpawnOptions(),
     });
     this.proc.stdout?.on('data', (d) => this.emit('log', d.toString()));

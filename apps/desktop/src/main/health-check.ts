@@ -12,6 +12,7 @@ import type { K8sService } from './k8s-service.js';
 import { probeKtctlConnectPid } from './ktctl-session-probe.js';
 import type { KtctlService } from './ktctl-service.js';
 import { isLocalPortOpen } from './process-utils.js';
+import { withWindowsExecOptions } from './windows-spawn.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -55,7 +56,7 @@ async function probeClusterDns(namespace: string): Promise<{ ok: boolean; detail
       cfg.kubeconfig,
     ];
     if (cfg.context) args.push('--context', cfg.context);
-    const { stdout } = await execFileAsync(kubectl, args, { timeout: 8000 });
+    const { stdout } = await execFileAsync(kubectl, args, withWindowsExecOptions({ timeout: 8000 }));
     const service = stdout.trim();
     if (!service) {
       return { ok: false, detail: `命名空间 ${namespace} 下无 Service，跳过 DNS 探测` };

@@ -1,5 +1,6 @@
 import type { ConnectParams, HelperInbound, HelperOutbound } from '@kt-virtual-env/shared';
 import { connectHelperSocket, getHelperSocketPath } from './helper-socket.js';
+import { getBundledKubectlBinDir } from './windows-spawn.js';
 
 export class HelperClient {
   private conn?: import('node:net').Socket;
@@ -41,5 +42,9 @@ export function buildConnectMessage(
   params: ConnectParams,
   ktHome: string,
 ): HelperInbound {
-  return { cmd: 'connect', params, ktctlPath, ktHome };
+  const msg: HelperInbound = { cmd: 'connect', params, ktctlPath, ktHome };
+  if (process.platform === 'win32') {
+    return { ...msg, kubectlBinDir: getBundledKubectlBinDir() };
+  }
+  return msg;
 }

@@ -11,13 +11,14 @@ import { loadBundledVersions } from './bundled-versions.js';
 import { isHelperRunning } from './helper-launcher.js';
 import { isMacLaunchDaemonInstalled, kickstartMacLaunchDaemon } from './helper-launchd.js';
 import { getHelperLogPath } from './helper-log.js';
+import { withWindowsExecOptions } from './windows-spawn.js';
 
 const execFileAsync = promisify(execFile);
 
 async function probeCliVersion(bin: string, tool: 'ktctl' | 'kubectl'): Promise<string | undefined> {
   try {
     const args = tool === 'kubectl' ? ['version', '--client'] : ['--version'];
-    const { stdout } = await execFileAsync(bin, args, { timeout: 8000 });
+    const { stdout } = await execFileAsync(bin, args, withWindowsExecOptions({ timeout: 8000 }));
     return stdout.trim().split('\n')[0];
   } catch {
     return undefined;

@@ -14,7 +14,7 @@ import {
 } from './helper-launchd.js';
 import { resolvePowershellPath } from './powershell-path.js';
 import { encodePowerShellCommand, isWindowsProcessElevated } from './windows-elevation.js';
-import { getWindowsSpawnOptions } from './windows-spawn.js';
+import { getWindowsSpawnOptions, withWindowsExecOptions } from './windows-spawn.js';
 
 const HELPER_CONNECT_TIMEOUT_MS = 3000;
 const HELPER_PING_TIMEOUT_MS = 3000;
@@ -266,11 +266,10 @@ async function waitForHelper(timeoutMs: number): Promise<void> {
   let helperProc = 'unknown';
   if (process.platform === 'win32') {
     try {
-      const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq helper-windows-amd64.exe', '/NH'], {
-        windowsHide: true,
+      const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq helper-windows-amd64.exe', '/NH'], withWindowsExecOptions({
         encoding: 'utf8',
         timeout: 5000,
-      });
+      }));
       helperProc = out.trim() || 'not found';
     } catch (err) {
       helperProc = err instanceof Error ? err.message : 'tasklist failed';
