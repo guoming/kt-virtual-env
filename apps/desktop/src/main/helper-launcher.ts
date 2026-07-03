@@ -14,6 +14,7 @@ import {
 } from './helper-launchd.js';
 import { resolvePowershellPath } from './powershell-path.js';
 import { encodePowerShellCommand, isWindowsProcessElevated } from './windows-elevation.js';
+import { getWindowsSpawnOptions } from './windows-spawn.js';
 
 const HELPER_CONNECT_TIMEOUT_MS = 3000;
 const HELPER_PING_TIMEOUT_MS = 3000;
@@ -115,7 +116,7 @@ function spawnDetached(command: string, args: string[], logFd?: number): Promise
     const child = spawn(command, args, {
       detached: true,
       stdio: logFd === undefined ? 'ignore' : ['ignore', logFd, logFd],
-      windowsHide: true,
+      ...getWindowsSpawnOptions(),
     });
     child.once('error', reject);
     child.once('spawn', () => {
@@ -128,7 +129,7 @@ function spawnDetached(command: string, args: string[], logFd?: number): Promise
 function spawnHelperDirect(helper: string, socketPath: string, logPath: string): void {
   const args = [`-socket=${socketPath}`, `-log=${logPath}`];
   appendHelperLauncherLog(`direct start helper args=${args.join(' ')}`);
-  const child = spawn(helper, args, { detached: true, stdio: 'ignore', windowsHide: true });
+  const child = spawn(helper, args, { detached: true, stdio: 'ignore', ...getWindowsSpawnOptions() });
   child.unref();
 }
 

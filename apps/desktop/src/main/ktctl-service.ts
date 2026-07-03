@@ -9,6 +9,7 @@ import type { RestartSpecRegistry } from './restart-spec-registry.js';
 import { probeKtctlSessionPid } from './ktctl-session-probe.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { getWindowsExecOptions } from './windows-spawn.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -231,7 +232,7 @@ export class KtctlService {
     const cfg = loadConfig();
     const args = ['recover', target, '--namespace', namespace, '--kubeconfig', cfg.kubeconfig];
     if (cfg.context) args.push('--context', cfg.context);
-    await execFileAsync(ktctl, args, { windowsHide: true });
+    await execFileAsync(ktctl, args, { ...getWindowsExecOptions() });
   }
 
   async clean(): Promise<void> {
@@ -239,7 +240,7 @@ export class KtctlService {
     const cfg = loadConfig();
     const args = ['clean', '--kubeconfig', cfg.kubeconfig];
     if (cfg.context) args.push('--context', cfg.context);
-    await execFileAsync(ktctl, args, { windowsHide: true });
+    await execFileAsync(ktctl, args, { ...getWindowsExecOptions() });
   }
 
   async isProcessRunning(id: string): Promise<boolean> {

@@ -8,7 +8,11 @@ build() {
   local goos=$1
   local goarch=$2
   local output=$3
-  GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -o "$OUT/$output" .
+  local ldflags=""
+  if [[ "$goos" == "windows" ]]; then
+    ldflags="-H windowsgui"
+  fi
+  GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -ldflags="$ldflags" -o "$OUT/$output" .
   echo "✓ helper $output"
 }
 

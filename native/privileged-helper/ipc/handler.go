@@ -48,6 +48,7 @@ func HandleConnect(ktctlPath string, args []string, ktHome string, onLog func(li
 		connectCmd = nil
 	}
 	connectCmd = exec.Command(ktctlPath, args...)
+	applyHideConsoleWindow(connectCmd)
 	if ktHome != "" {
 		pidDir := filepath.Join(ktHome, ".kt", "pid")
 		_ = os.MkdirAll(pidDir, 0o777)
