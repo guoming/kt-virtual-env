@@ -1,0 +1,72 @@
+apps/desktop/src/main/ktctl-session-probe.ts
+  s_6f1b11cf68ba1a::t_4d8d5b803188db 41
+  s_6f1b11cf68ba1a::t_0e2ba6440c53e5 6
+native/kubectl-shim/build.sh
+  s_6f1b11cf68ba1a::t_72b2c21067a165 1-14
+apps/desktop/src/main/helper-client.ts
+  s_6f1b11cf68ba1a::t_f8937ef2b010bb 45-49
+  s_6f1b11cf68ba1a::t_33fc1769a2dc97 3
+apps/desktop/package.json
+  s_6f1b11cf68ba1a::t_95b54d88d0e8b9 3
+apps/desktop/src/main/k8s-service.ts
+  s_6f1b11cf68ba1a::t_2d9e24a31d7f7a 30
+  s_6f1b11cf68ba1a::t_c466b084561ca0 6
+  s_6f1b11cf68ba1a::t_f5249b959ab63a 55
+  s_6f1b11cf68ba1a::t_89a243c475c1ac 132
+  s_6f1b11cf68ba1a::t_41666ed53fb6c0 160
+  s_6f1b11cf68ba1a::t_2bce21cab50ec2 80
+  s_6f1b11cf68ba1a::t_065d19879a22bd 40,43
+apps/desktop/src/main/helper-launcher.ts
+  s_6f1b11cf68ba1a::t_6e4b1b4db88bac 17
+  s_6f1b11cf68ba1a::t_542f4ce6e6040c 269,272
+apps/desktop/src/main/windows-spawn.test.ts
+  s_6f1b11cf68ba1a::t_1b4a2fd6caacfa 2-7,23-48
+apps/desktop/src/main/local-dev-ports.ts
+  s_6f1b11cf68ba1a::t_3a73f17fae56c2 93
+  s_6f1b11cf68ba1a::t_2d2984b6b2797f 224
+  s_6f1b11cf68ba1a::t_872fa71830c1d6 12
+  s_6f1b11cf68ba1a::t_548987c62390dc 148,150
+native/privileged-helper/main.go
+  s_6f1b11cf68ba1a::t_fade3a017440ef 112,115,118
+native/privileged-helper/ipc/handler.go
+  s_6f1b11cf68ba1a::t_8a7319e815662c 77-80,85,87
+  s_6f1b11cf68ba1a::t_57fdb794842020 10
+  s_6f1b11cf68ba1a::t_4bca63189a5f49 42-66
+apps/desktop/src/main/process-runner.ts
+  s_6f1b11cf68ba1a::t_38b088324a3c72 19
+  s_6f1b11cf68ba1a::t_8c8890fdb98c01 3
+apps/desktop/src/main/environment-check.ts
+  s_6f1b11cf68ba1a::t_8aff15f12a4a9c 21
+  s_6f1b11cf68ba1a::t_a49522f863772a 14
+apps/desktop/src/main/health-check.ts
+  s_6f1b11cf68ba1a::t_2a82e5c80f8e0e 59
+  s_6f1b11cf68ba1a::t_deff387f6b5f81 15
+packages/shared/src/types.ts
+  s_6f1b11cf68ba1a::t_b71c556ceb0fb3 88
+scripts/fetch-binaries.sh
+  s_6f1b11cf68ba1a::t_0c74aa0644ac11 151,153,156-157
+  s_6f1b11cf68ba1a::t_b14fd1be5f02b7 158,172-177
+native/kubectl-shim/main.go
+  s_6f1b11cf68ba1a::t_7ded35b3ab4307 1-39
+apps/desktop/src/main/ktctl-service.ts
+  s_6f1b11cf68ba1a::t_a8e42b5ee885cc 235,243
+  s_6f1b11cf68ba1a::t_ca51f68eb076ed 12
+apps/desktop/src/main/windows-spawn.ts
+  s_6f1b11cf68ba1a::t_25e29e2ff5e297 2-5,15,25-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "d4474208f4187d2d7f1928d32922da31b1b14f32",
+  "prompts": {},
+  "sessions": {
+    "s_6f1b11cf68ba1a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7c6ba22f-c97a-4341-9246-f0dc7b0a1f6e",
+        "model": "default"
+      },
+      "human_author": "zt7905 <zt7905@ztn.com>"
+    }
+  }
+}
