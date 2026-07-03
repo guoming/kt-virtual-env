@@ -1,0 +1,45 @@
+native/privileged-helper/ipc/hide_window_windows.go
+  s_8fe124661627d4::t_f19ea2d0885eaf 1-19
+apps/desktop/package.json
+  s_8fe124661627d4::t_05d9b98bc85071 3
+apps/desktop/src/main/helper-launcher.ts
+  s_8fe124661627d4::t_5796dda90371ce 17
+  s_8fe124661627d4::t_e1c69b6579b574 119
+  s_8fe124661627d4::t_5fa477fb132699 132
+native/privileged-helper/ipc/hide_window_other.go
+  s_8fe124661627d4::t_782bca79249c90 1-9
+native/privileged-helper/ipc/handler.go
+  s_8fe124661627d4::t_d320a943516d0d 51
+apps/desktop/src/main/windows-spawn.test.ts
+  s_8fe124661627d4::t_750f875cf70297 1-17
+native/privileged-helper/build.sh
+  s_8fe124661627d4::t_e80bc6efd5194b 11-15
+apps/desktop/src/main/ktctl-session-probe.ts
+  s_8fe124661627d4::t_f149e83828f402 41
+  s_8fe124661627d4::t_cd475f098cd82e 6
+apps/desktop/src/main/ktctl-service.ts
+  s_8fe124661627d4::t_58c6a012c3d1f9 235,243
+  s_8fe124661627d4::t_93b10f1bc99801 12
+apps/desktop/src/main/windows-spawn.ts
+  s_8fe124661627d4::t_4c4e7208d491eb 1-9,15-17,23-24
+  s_8fe124661627d4::t_0a5ae691c292fa 10-14,18-22
+apps/desktop/src/main/process-runner.ts
+  s_8fe124661627d4::t_5176b7f386fb2f 3
+  s_8fe124661627d4::t_b9ecea8290d3c6 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "5acdae2875100e8bfb9814f8a67b3ad5169f516e",
+  "prompts": {},
+  "sessions": {
+    "s_8fe124661627d4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "035cf3bc-e31f-43a1-b4e3-9f0597fd8773",
+        "model": "default"
+      },
+      "human_author": "zt7905 <zt7905@ztn.com>"
+    }
+  }
+}
