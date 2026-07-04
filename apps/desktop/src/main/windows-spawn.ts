@@ -35,15 +35,22 @@ export function withWindowsExecOptions<T extends Record<string, unknown>>(option
   };
 }
 
-/** ktctl 通过 PATH 查找 kubectl；Windows 上须优先使用 bundled bin（含 kubectl shim） */
+/** ktctl 通过 PATH 查找 kubectl；Windows 上须优先使用 bundled bin（含 kubectl shim），并确保 System32 可用（netsh 等） */
 export function buildKtctlSpawnEnv(extra?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = { ...process.env, ...extra } as Record<string, string>;
   if (process.platform !== 'win32') return env;
-  const binDir = path.dirname(getBundledBinary('ktctl'));
   const sep = path.delimiter;
+  const prependDirs: string[] = [path.dirname(getBundledBinary('ktctl'))];
+  const systemRoot = env.SystemRoot ?? env.WINDIR ?? 'C:\\Windows';
+  prependDirs.push(
+    path.join(systemRoot, 'System32'),
+    path.join(systemRoot, 'Sysnative'),
+  );
   const currentPath = env.PATH ?? '';
-  if (!currentPath.split(sep).includes(binDir)) {
-    env.PATH = currentPath ? `${binDir}${sep}${currentPath}` : binDir;
+  const parts = currentPath ? currentPath.split(sep) : [];
+  const missing = prependDirs.filter((dir) => !parts.includes(dir));
+  if (missing.length > 0) {
+    env.PATH = [...missing, ...parts].join(sep);
   }
   return env;
 }

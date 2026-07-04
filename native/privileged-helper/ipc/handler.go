@@ -74,7 +74,7 @@ func HandleConnect(ktctlPath string, args []string, ktHome string, kubectlBinDir
 	}
 	connectCmd = exec.Command(ktctlPath, args...)
 	applyHideConsoleWindow(connectCmd)
-	env := os.Environ()
+	env := ensurePlatformPath(os.Environ())
 	if kubectlBinDir != "" {
 		env = prependPathDir(env, kubectlBinDir)
 	}
