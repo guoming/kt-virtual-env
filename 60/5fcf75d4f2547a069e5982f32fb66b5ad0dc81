@@ -1,0 +1,27 @@
+apps/desktop/package.json
+  s_5efb97e719a23f::t_76cc62e7bbd0bb 3
+native/privileged-helper/ipc/path_windows.go
+  s_5efb97e719a23f::t_6dad9a3ed1173b 1-31
+native/privileged-helper/ipc/path_other.go
+  s_5efb97e719a23f::t_7e267197255da5 1-10
+native/privileged-helper/ipc/handler.go
+  s_5efb97e719a23f::t_b6cd3226b9bb28 77
+apps/desktop/src/main/windows-spawn.ts
+  s_5efb97e719a23f::t_4943a3419e6d0c 38,43-48,50-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.10",
+  "base_commit_sha": "605fcf75d4f2547a069e5982f32fb66b5ad0dc81",
+  "prompts": {},
+  "sessions": {
+    "s_5efb97e719a23f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "970dcf84-ea77-431d-b07e-cfdc4d4f4835",
+        "model": "default"
+      },
+      "human_author": "zt7905 <zt7905@ztn.com>"
+    }
+  }
+}
